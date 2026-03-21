@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <p class="section-eyebrow">Dashboard</p>
+        <h1 class="page-title">Live walking-accessibility dashboard</h1>
+        <p class="page-subtitle">
+            Use the dashboard to preview how EdgeSense responds to normal movement, caution conditions, and detected drop-offs.
+        </p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="dashboard-grid">
+            <div class="hero-panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-label">Current System State</p>
+                        <h3 id="dashboardStatusTitle">SAFE</h3>
+                    </div>
+                    <div class="panel-badge" id="dashboardEnvironment">Normal indoor/outdoor movement</div>
+                </div>
+
+                <div class="status-box safe" id="statusBox">
+                    <span id="statusLabel">SAFE</span>
+                </div>
+
+                <div class="sensor-grid">
+                    <div class="sensor-card">
+                        <p>Ground Distance</p>
+                        <h2 id="distanceValue">12 cm</h2>
+                    </div>
+                    <div class="sensor-card">
+                        <p>Visibility Risk</p>
+                        <h2 id="visibilityValue">300</h2>
+                    </div>
+                </div>
+
+                <div class="sensor-grid">
+                    <div class="sensor-card">
+                        <p>Camera Status</p>
+                        <h2 id="cameraStatus">Idle</h2>
+                    </div>
+                    <div class="sensor-card">
+                        <p>Last Updated</p>
+                        <h2 id="lastUpdated">Not yet updated</h2>
+                    </div>
+                </div>
+
+                <div class="panel-note">
+                    The system is designed to support safer walking across indoor and outdoor spaces by detecting elevation changes and caution conditions.
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>Simulation Controls</h3>
+                <p>Use these buttons during your hackathon demo if live hardware is not connected yet.</p>
+
+                <div class="button-stack">
+                    <button class="btn btn-primary" onclick="simulateMode('safe')">Simulate Safe</button>
+                    <button class="btn btn-warning" onclick="simulateMode('warning')">Simulate Warning</button>
+                    <button class="btn btn-danger" onclick="simulateMode('danger')">Simulate Danger</button>
+                </div>
+
+                <div class="manual-update">
+                    <h4>Manual Sensor Input</h4>
+
+                    <label for="distanceInput">Distance (cm)</label>
+                    <input type="number" id="distanceInput" value="12" min="0" step="1">
+
+                    <label for="visibilityInput">Visibility Risk</label>
+                    <input type="number" id="visibilityInput" value="300" min="0" max="1023" step="1">
+
+                    <label for="cameraInput">Camera Status</label>
+                    <input type="text" id="cameraInput" value="Idle">
+
+                    <button class="btn btn-secondary" onclick="sendManualUpdate()">Update Readings</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="logs-grid">
+            <div class="logs-section">
+                <h3>Hazard Log</h3>
+                <div id="logContainer" class="log-container">
+                    <p class="empty-log">No warnings or danger events yet.</p>
+                </div>
+            </div>
+
+            <div class="logs-section">
+                <h3>Quick Navigation</h3>
+                <div class="info-card">
+                    <ul>
+                        <li><a href="{{ url_for('alerts') }}">Go to Safety Alerts</a></li>
+                        <li><a href="{{ url_for('features') }}">Review Hardware + Software Features</a></li>
+                        <li><a href="{{ url_for('about') }}">Read the Project Mission</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

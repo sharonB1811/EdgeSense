@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-overlay"></div>
+    <div class="container hero-grid">
+        <div class="hero-text">
+            <p class="eyebrow">Accessibility + Mobility Support</p>
+            <h1>Safer movement, one step ahead.</h1>
+            <p class="hero-description">
+                EdgeSense is a wearable accessibility-focused mobility support system that helps users detect stairs,
+                curbs, ledges, and sudden drop-offs before a dangerous misstep happens. Designed for both indoor and
+                outdoor use, it supports safer movement in hallways, stairwells, sidewalks, campus spaces, and
+                low-visibility environments.
+            </p>
+
+            <div class="hero-buttons">
+                <a href="{{ url_for('features') }}" class="btn btn-primary">Explore Features</a>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">View Live Demo</a>
+            </div>
+
+            <div class="hero-tags">
+                <span>Drop-Off Detection</span>
+                <span>Indoor + Outdoor Use</span>
+                <span>Accessibility Support</span>
+                <span>Quick Safety Actions</span>
+            </div>
+        </div>
+
+        <div class="hero-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-label">Core Idea</p>
+                    <h3>Accessibility-Focused Walking Support</h3>
+                </div>
+                <div class="panel-badge">Prototype</div>
+            </div>
+
+            <div class="status-box warning">
+                <span>WARNING</span>
+            </div>
+
+            <div class="sensor-grid">
+                <div class="sensor-card">
+                    <p>Ground Distance</p>
+                    <h2>12 cm</h2>
+                </div>
+                <div class="sensor-card">
+                    <p>Visibility Risk</p>
+                    <h2>Medium</h2>
+                </div>
+            </div>
+
+            <div class="panel-note">
+                Detects elevation changes like stairs and curbs while also supporting awareness in low-visibility conditions.
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container section-grid">
+        <div>
+            <p class="section-eyebrow">Why It Matters</p>
+            <h2>Walking hazards are often below us, not just in front of us.</h2>
+            <p>
+                Many mobility and safety systems focus on forward-facing obstacles, but stairs, curbs, ledges, and sudden
+                elevation changes are some of the most dangerous and overlooked walking hazards.
+            </p>
+            <p>
+                EdgeSense is built to provide an extra layer of awareness before a dangerous step happens, helping users move
+                more confidently through both familiar and unfamiliar spaces.
+            </p>
+        </div>
+
+        <div class="info-card">
+            <h3>What the system supports</h3>
+            <ul>
+                <li>Indoor stairwells and hallways</li>
+                <li>Outdoor sidewalks and curbs</li>
+                <li>Campus and building navigation</li>
+                <li>Low-visibility movement support</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="section alt">
+    <div class="container">
+        <p class="section-eyebrow">Explore the Project</p>
+        <h2>Navigate the full accessibility system</h2>
+
+        <div class="features-grid">
+            <a href="{{ url_for('about') }}" class="feature-card card-link">
+                <div class="feature-icon">01</div>
+                <h3>About</h3>
+                <p>Read the accessibility problem, mission, and real-world walking scenarios this project addresses.</p>
+            </a>
+
+            <a href="{{ url_for('features') }}" class="feature-card card-link">
+                <div class="feature-icon">02</div>
+                <h3>Features</h3>
+                <p>Review the hardware and software capabilities that support safer walking indoors and outdoors.</p>
+            </a>
+
+            <a href="{{ url_for('dashboard') }}" class="feature-card card-link">
+                <div class="feature-icon">03</div>
+                <h3>Dashboard</h3>
+                <p>Use the live interface to simulate safe, warning, and danger conditions.</p>
+            </a>
+
+            <a href="{{ url_for('alerts') }}" class="feature-card card-link">
+                <div class="feature-icon">04</div>
+                <h3>Safety Alerts</h3>
+                <p>Manage trusted contacts, quick check-ins, and emergency alert actions.</p>
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}

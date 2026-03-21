@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <p class="section-eyebrow">Features</p>
+        <h1 class="page-title">Hardware and software built for walking accessibility</h1>
+        <p class="page-subtitle">
+            EdgeSense combines simple sensing hardware with a live dashboard and safety-action tools to support safer movement.
+        </p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <p class="section-eyebrow">Hardware</p>
+        <h2>Physical system features</h2>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">◢</div>
+                <h3>Ultrasonic Sensor</h3>
+                <p>Detects drop-offs such as stairs, curbs, ledges, and sudden changes in ground level.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">◌</div>
+                <h3>Potentiometer</h3>
+                <p>Acts as a visibility-risk input for caution conditions and low-visibility support.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">◉</div>
+                <h3>Camera</h3>
+                <p>Supports incident context through monitoring or snapshot-captured safety events.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">●</div>
+                <h3>Lights + Buttons</h3>
+                <p>Provide physical feedback and support actions like quick check-ins and help alerts.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section alt">
+    <div class="container">
+        <p class="section-eyebrow">Software</p>
+        <h2>Dashboard and support features</h2>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">S</div>
+                <h3>Status Dashboard</h3>
+                <p>Shows SAFE, WARNING, or DANGER based on live or simulated sensor input.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">L</div>
+                <h3>Hazard Logs</h3>
+                <p>Stores recent warning and danger events with timestamps and walking-condition data.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">C</div>
+                <h3>Trusted Contacts</h3>
+                <p>Lets the user save a contact for quick check-ins and emergency support actions.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">!</div>
+                <h3>Safety Actions</h3>
+                <p>Supports check-ins, help alerts, and an emergency alert preview panel.</p>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
