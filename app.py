@@ -14,6 +14,7 @@ TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER")
 
 CONTACT_FILE = "trusted_contact.json"
 
+
 current_state = {
     "distance": 12,
     "visibility": 300,

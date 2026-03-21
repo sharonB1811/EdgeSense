@@ -318,6 +318,7 @@ async function sendHelpAlert() {
     }
 }
 
+
 document.addEventListener("DOMContentLoaded", async () => {
     await fetchStatus();
     await fetchLogs();
