@@ -1,7 +1,18 @@
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime
+from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
+import json
+import os
+import re
 
 app = Flask(__name__)
+
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER")
+
+CONTACT_FILE = "trusted_contact.json"
 
 current_state = {
     "distance": 12,
@@ -15,25 +26,36 @@ current_state = {
 hazard_logs = []
 alert_logs = []
 
-trusted_contact = {
-    "name": "Not set",
-    "contact": "Not set"
-}
+
+def load_trusted_contact():
+    if os.path.exists(CONTACT_FILE):
+        try:
+            with open(CONTACT_FILE, "r") as f:
+                data = json.load(f)
+                return {
+                    "name": data.get("name", "Not set"),
+                    "contact": data.get("contact", "Not set")
+                }
+        except Exception:
+            pass
+    return {
+        "name": "Not set",
+        "contact": "Not set"
+    }
+
+
+def save_trusted_contact_to_file(contact_data):
+    with open(CONTACT_FILE, "w") as f:
+        json.dump(contact_data, f)
+
+
+trusted_contact = load_trusted_contact()
 
 
 def determine_status(distance, visibility):
-    """
-    Accessibility-focused logic:
-    - DANGER: likely drop-off / stairs / curb detected
-    - WARNING: elevated visibility risk or caution condition
-    - SAFE: normal walking condition
-    """
-    drop_threshold = 20
-    visibility_warning_threshold = 600
-
-    if distance >= drop_threshold:
+    if distance >= 20:
         return "DANGER", "Drop-off or elevation change detected"
-    elif visibility >= visibility_warning_threshold:
+    elif visibility >= 600:
         return "WARNING", "Low-visibility caution"
     else:
         return "SAFE", "Normal indoor/outdoor movement"
@@ -48,8 +70,6 @@ def add_hazard_log(distance, visibility, status, environment):
         "status": status,
         "environment": environment
     })
-    if len(hazard_logs) > 20:
-        hazard_logs.pop()
 
 
 def add_alert_log(alert_type, message):
@@ -61,8 +81,27 @@ def add_alert_log(alert_type, message):
         "contact_name": trusted_contact["name"],
         "contact": trusted_contact["contact"]
     })
-    if len(alert_logs) > 20:
-        alert_logs.pop()
+
+
+def normalize_phone_number(value):
+    value = str(value).strip()
+    value = re.sub(r"[^\d+]", "", value)
+
+    if value.startswith("00"):
+        value = "+" + value[2:]
+
+    if not value.startswith("+"):
+        digits_only = re.sub(r"\D", "", value)
+        if len(digits_only) == 10:
+            value = "+1" + digits_only
+        elif len(digits_only) == 11 and digits_only.startswith("1"):
+            value = "+" + digits_only
+
+    return value
+
+
+def is_valid_e164(value):
+    return bool(re.fullmatch(r"\+[1-9]\d{7,14}", value))
 
 
 @app.route("/")
@@ -118,17 +157,27 @@ def get_contact():
 @app.route("/api/contact", methods=["POST"])
 def save_contact():
     data = request.get_json(silent=True) or {}
-    name = str(data.get("name", "")).strip()
-    contact = str(data.get("contact", "")).strip()
 
-    if not name or not contact:
+    name = str(data.get("name", "")).strip()
+    raw_contact = str(data.get("contact", "")).strip()
+
+    if not name or not raw_contact:
         return jsonify({
             "success": False,
-            "message": "Both name and contact are required."
+            "message": "Both name and phone number are required."
+        }), 400
+
+    normalized_contact = normalize_phone_number(raw_contact)
+
+    if not is_valid_e164(normalized_contact):
+        return jsonify({
+            "success": False,
+            "message": "Enter a valid phone number in format like +15713038776."
         }), 400
 
     trusted_contact["name"] = name
-    trusted_contact["contact"] = contact
+    trusted_contact["contact"] = normalized_contact
+    save_trusted_contact_to_file(trusted_contact)
 
     return jsonify({
         "success": True,
@@ -216,7 +265,7 @@ def simulate_state():
 @app.route("/api/checkin", methods=["POST"])
 def checkin():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    add_alert_log("Check-In", f"User accessibility safety check-in sent at {timestamp}.")
+    add_alert_log("Check-In", f"Accessibility check-in sent at {timestamp}.")
     return jsonify({
         "success": True,
         "message": "Check-in sent successfully.",
@@ -229,23 +278,78 @@ def send_alert():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     alert_message = (
-        f"Help alert triggered at {timestamp}. "
-        f"Status: {current_state['status']}. "
-        f"Environment: {current_state['environment']}. "
-        f"Distance: {current_state['distance']} cm. "
-        f"Visibility risk: {current_state['visibility']}. "
-        f"Camera: {current_state['camera_status']}."
+        f"EdgeSense Help Alert\n"
+        f"Time: {timestamp}\n"
+        f"Status: {current_state['status']}\n"
+        f"Environment: {current_state['environment']}\n"
+        f"Distance: {current_state['distance']} cm\n"
+        f"Visibility: {current_state['visibility']}\n"
+        f"Camera: {current_state['camera_status']}"
     )
+
+    contact_number = str(trusted_contact.get("contact", "")).strip()
+
+    if not contact_number or contact_number == "Not set":
+        return jsonify({
+            "success": False,
+            "message": "No trusted contact saved."
+        }), 400
+
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_FROM_NUMBER:
+        return jsonify({
+            "success": False,
+            "message": "Twilio environment variables are missing."
+        }), 500
+
+    if contact_number == TWILIO_FROM_NUMBER:
+        return jsonify({
+            "success": False,
+            "message": "Trusted contact cannot be the same as the Twilio sender number."
+        }), 400
 
     add_alert_log("Help Alert", alert_message)
 
-    return jsonify({
-        "success": True,
-        "message": "Help alert sent successfully.",
-        "timestamp": timestamp,
-        "alert_message": alert_message,
-        "contact": trusted_contact
-    })
+    try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+        message = client.messages.create(
+            body=alert_message,
+            from_=TWILIO_FROM_NUMBER,
+            to=contact_number
+        )
+
+        print("TWILIO SID:", message.sid)
+        print("TWILIO STATUS:", message.status)
+        print("TWILIO FROM:", TWILIO_FROM_NUMBER)
+        print("TWILIO TO:", contact_number)
+
+        return jsonify({
+            "success": True,
+            "message": "SMS request accepted by Twilio.",
+            "timestamp": timestamp,
+            "alert_message": alert_message,
+            "contact": trusted_contact,
+            "message_sid": message.sid,
+            "twilio_status": message.status,
+            "error_code": getattr(message, "error_code", None),
+            "error_message": getattr(message, "error_message", None)
+        })
+
+    except TwilioRestException as e:
+        print("TWILIO ERROR CODE:", e.code)
+        print("TWILIO ERROR MESSAGE:", e.msg)
+        return jsonify({
+            "success": False,
+            "message": f"Twilio error {e.code}: {e.msg}",
+            "error_code": e.code
+        }), 500
+
+    except Exception as e:
+        print("TWILIO ERROR:", str(e))
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
 
 
 if __name__ == "__main__":
