@@ -3,8 +3,8 @@
 const int TRIG_PIN = 6; // Arduino pin connected to Ultrasonic Sensor's TRIG pin
 const int ECHO_PIN = 7; // Arduino pin connected to Ultrasonic Sensor's ECHO pin
 const int LED_PIN  = 3; // Arduino pin connected to LED's pin
-const int FLOOR_DISTANCE_THRESHOLD = 10; // centimeters
-const int MAX_DISTANCE_THRESHOLD = 30.5;
+const int FLOOR_DISTANCE_THRESHOLD = 15; // centimeters
+const int MAX_DISTANCE_THRESHOLD = 42;
 
 // variables will change:
 float duration_us, distance_cm;
