@@ -95,6 +95,10 @@ try:
             if line=='CAPTURE':
                 print("Capturing!!!")
                 detect()
+            elif line=='WATCH OUT FOR DOWNSTAIRS':
+                print('WATCH OUT')
+            elif line=='SURFACE UP FRONT':
+                print("SURFACE AHEAD")
 except serial.SerialException as se:
     print(f"Serial Exception: {se}")
 except Exception as e:
