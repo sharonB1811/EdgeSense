@@ -90,7 +90,7 @@ try:
     while True:
         # keep listening for capture - if found, run detect function.
         if serialVar.in_waiting > 0:
-            line = serialVar.readline().decode('utf-8',errors = 'ignore').strip()
+            line = serialVar.readline().decode('utf-8',errors = 'ignore').strip()t
             if line=='CAPTURE':
                 print("Capturing!!!")
                 detect()

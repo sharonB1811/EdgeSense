@@ -9,6 +9,7 @@ const int MAX_DISTANCE_THRESHOLD = 42;
 
 // variables will change:
 float duration_us, distance_cm;
+bool lastState = HIGH; 
 
 void setup() {
   Serial.begin (9600);       // initialize serial port
@@ -19,10 +20,12 @@ void setup() {
 }
 
 void loop() {
-  if (digitalRead(BUTTON_PIN) == LOW){
+  bool currState = digitalRead(BUTTON_PIN);
+  if (lastState == HIGH && currState == LOW){
     Serial.println("CAPTURE");
     delay(200);
   }
+  lastState = currState;
   // generate 10-microsecond pulse to TRIG pin
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
@@ -57,5 +60,5 @@ void loop() {
     Serial.print(distance_cm);
     Serial.println(" cm");
   }
-  delay(100);
+  delay(3000);
 }
