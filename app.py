@@ -4,26 +4,67 @@ import json
 import os
 import re
 import smtplib
+import threading
+import time
 from email.message import EmailMessage
+
+import serial
+from serial.tools import list_ports
 
 app = Flask(__name__)
 
-CONTACT_FILE = "trusted_contact.json"
+# ===== FILE SETUP =====
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONTACT_FILE = os.path.join(BASE_DIR, "trusted_contact.json")
 
 ALERT_EMAIL_ADDRESS = os.environ.get("ALERT_EMAIL_ADDRESS")
 ALERT_EMAIL_APP_PASSWORD = os.environ.get("ALERT_EMAIL_APP_PASSWORD")
 
+# ===== MATCH ORIGINAL ARDUINO THRESHOLDS =====
+FLOOR_DISTANCE_THRESHOLD = 15
+MAX_DISTANCE_THRESHOLD = 42
+
+# ===== GLOBAL STATE =====
 current_state = {
-    "distance": 12,
-    "visibility": 300,
-    "status": "SAFE",
-    "environment": "Normal indoor/outdoor movement",
+    "distance": 12.0,
+    "visibility": 300.0,
+    "status": "WARNING",
+    "hazard_level": "medium",
+    "hazard_reason": "Surface or obstacle detected close in front.",
+    "environment": "Surface up front",
     "camera_status": "Idle",
-    "last_updated": None
+    "mobility_message": "Caution: something is very close ahead.",
+    "last_updated": None,
+    "data_source": "simulation",
+    "arduino_connected": False
 }
 
 hazard_logs = []
 alert_logs = []
+
+
+def now_string():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ===== CONTACT HELPERS =====
+def is_valid_email(value):
+    value = str(value).strip()
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
+
+
+def is_valid_phone(value):
+    value = str(value).strip()
+    return bool(re.fullmatch(r"^\+?[1-9]\d{9,14}$", value))
+
+
+def detect_contact_type(value):
+    value = str(value).strip()
+    if is_valid_email(value):
+        return "email"
+    if is_valid_phone(value):
+        return "phone"
+    return "unknown"
 
 
 def load_trusted_contact():
@@ -31,62 +72,109 @@ def load_trusted_contact():
         try:
             with open(CONTACT_FILE, "r") as f:
                 data = json.load(f)
+                contact_value = str(data.get("contact", "Not set")).strip()
                 return {
-                    "name": data.get("name", "Not set"),
-                    "contact": data.get("contact", "Not set")
+                    "name": str(data.get("name", "Not set")).strip() or "Not set",
+                    "contact": contact_value or "Not set",
+                    "contact_type": detect_contact_type(contact_value)
                 }
         except Exception:
             pass
+
     return {
         "name": "Not set",
-        "contact": "Not set"
+        "contact": "Not set",
+        "contact_type": "unknown"
     }
 
 
 def save_trusted_contact_to_file(contact_data):
     with open(CONTACT_FILE, "w") as f:
-        json.dump(contact_data, f)
+        json.dump(contact_data, f, indent=2)
 
 
 trusted_contact = load_trusted_contact()
 
 
+# ===== STATUS LOGIC =====
 def determine_status(distance, visibility):
-    if distance >= 20:
-        return "DANGER", "Drop-off or elevation change detected"
-    elif visibility >= 600:
-        return "WARNING", "Low-visibility caution"
+    """
+    Mirrors the original Arduino logic exactly:
+
+    - distance < 15  -> SURFACE UP FRONT
+    - distance > 42  -> WATCH OUT FOR DOWNSTAIRS
+    - otherwise      -> ALL IS CLEAR
+    """
+
+    if distance < FLOOR_DISTANCE_THRESHOLD:
+        return {
+            "status": "WARNING",
+            "hazard_level": "medium",
+            "hazard_reason": "Surface or obstacle detected close in front.",
+            "environment": "Surface up front",
+            "camera_status": "Monitoring",
+            "mobility_message": "Caution: something is very close ahead."
+        }
+
+    elif distance > MAX_DISTANCE_THRESHOLD:
+        return {
+            "status": "DANGER",
+            "hazard_level": "high",
+            "hazard_reason": "Possible downstairs or drop-off detected.",
+            "environment": "Watch out for downstairs",
+            "camera_status": "Monitoring",
+            "mobility_message": "Stop and check footing. A drop-off may be ahead."
+        }
+
     else:
-        return "SAFE", "Normal indoor/outdoor movement"
+        return {
+            "status": "SAFE",
+            "hazard_level": "none",
+            "hazard_reason": "All is clear.",
+            "environment": "Stable walking surface",
+            "camera_status": "Idle",
+            "mobility_message": "Path appears clear."
+        }
 
 
-def add_hazard_log(distance, visibility, status, environment):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    hazard_logs.insert(0, {
-        "timestamp": timestamp,
-        "distance": distance,
-        "visibility": visibility,
-        "status": status,
-        "environment": environment
-    })
+# ===== LOG HELPERS =====
+def add_hazard_log(state):
+    entry = {
+        "timestamp": now_string(),
+        "distance": state["distance"],
+        "visibility": state["visibility"],
+        "status": state["status"],
+        "hazard_level": state["hazard_level"],
+        "hazard_reason": state["hazard_reason"],
+        "environment": state["environment"],
+        "camera_status": state["camera_status"],
+        "mobility_message": state["mobility_message"]
+    }
+
+    if not hazard_logs or hazard_logs[0] != entry:
+        hazard_logs.insert(0, entry)
+
+    if len(hazard_logs) > 50:
+        del hazard_logs[50:]
 
 
-def add_alert_log(alert_type, message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    alert_logs.insert(0, {
-        "timestamp": timestamp,
+def add_alert_log(alert_type, message, transport="dashboard preview"):
+    entry = {
+        "timestamp": now_string(),
         "type": alert_type,
         "message": message,
+        "transport": transport,
         "contact_name": trusted_contact["name"],
-        "contact": trusted_contact["contact"]
-    })
+        "contact": trusted_contact["contact"],
+        "contact_type": trusted_contact["contact_type"]
+    }
+    alert_logs.insert(0, entry)
+
+    if len(alert_logs) > 50:
+        del alert_logs[50:]
 
 
-def is_valid_email(value):
-    value = str(value).strip()
-    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
-
-
+# ===== EMAIL =====
 def send_email_alert(to_email, subject, body):
     if not ALERT_EMAIL_ADDRESS or not ALERT_EMAIL_APP_PASSWORD:
         raise ValueError("Email environment variables are missing.")
@@ -102,19 +190,130 @@ def send_email_alert(to_email, subject, body):
         smtp.send_message(msg)
 
 
+def build_alert_message(alert_type):
+    return (
+        f"EdgeSense {alert_type}\n"
+        f"Time: {now_string()}\n"
+        f"Mobility Status: {current_state['status']}\n"
+        f"Hazard: {current_state['hazard_reason']}\n"
+        f"Environment: {current_state['environment']}\n"
+        f"Ground Distance: {current_state['distance']} cm\n"
+        f"Visibility Context: {current_state['visibility']}\n"
+        f"Camera: {current_state['camera_status']}\n"
+        f"Message: {current_state['mobility_message']}"
+    )
+
+
+# ===== STATE UPDATE =====
+def update_data(distance, visibility, camera_status, source="simulation"):
+    computed = determine_status(distance, visibility)
+
+    # Preserve explicit capture state from button press if present
+    cleaned_camera_status = str(camera_status).strip() if camera_status is not None else ""
+    if not cleaned_camera_status:
+        cleaned_camera_status = computed["camera_status"]
+
+    current_state["distance"] = round(float(distance), 2)
+    current_state["visibility"] = round(float(visibility), 2)
+    current_state["status"] = computed["status"]
+    current_state["hazard_level"] = computed["hazard_level"]
+    current_state["hazard_reason"] = computed["hazard_reason"]
+    current_state["environment"] = computed["environment"]
+    current_state["camera_status"] = cleaned_camera_status
+    current_state["mobility_message"] = computed["mobility_message"]
+    current_state["last_updated"] = now_string()
+    current_state["data_source"] = source
+
+    if current_state["status"] in ["WARNING", "DANGER"]:
+        add_hazard_log(current_state)
+
+
+# ===== ARDUINO SERIAL =====
+def find_arduino_port():
+    ports = list(list_ports.comports())
+
+    preferred_keywords = [
+        "usbmodem",
+        "usbserial",
+        "arduino",
+        "wch",
+        "cp210",
+        "ch340",
+        "uno r4"
+    ]
+
+    for port in ports:
+        device_lower = (port.device or "").lower()
+        desc_lower = (port.description or "").lower()
+        hwid_lower = (port.hwid or "").lower()
+        combined = f"{device_lower} {desc_lower} {hwid_lower}"
+
+        if any(keyword in combined for keyword in preferred_keywords):
+            return port.device
+
+    return None
+
+
+def parse_arduino_line(line):
+    """
+    Expected Arduino format:
+    DIST:12.34,VIS:300,CAM:Idle
+    """
+    parts = {}
+    for item in line.split(","):
+        if ":" not in item:
+            continue
+        key, value = item.split(":", 1)
+        parts[key.strip().upper()] = value.strip()
+
+    distance = float(parts.get("DIST", current_state["distance"]))
+    visibility = float(parts.get("VIS", current_state["visibility"]))
+    camera = parts.get("CAM", "Idle")
+    return distance, visibility, camera
+
+
+def read_arduino_loop():
+    while True:
+        port = find_arduino_port()
+
+        if not port:
+            current_state["arduino_connected"] = False
+            time.sleep(2)
+            continue
+
+        try:
+            print(f"Attempting Arduino connection on {port}")
+            ser = serial.Serial(port, 9600, timeout=1)
+            time.sleep(2)  # allow board reset
+
+            current_state["arduino_connected"] = True
+            print(f"✅ Arduino connected on {port}")
+
+            while True:
+                raw = ser.readline().decode("utf-8", errors="ignore").strip()
+
+                if not raw:
+                    continue
+
+                print("Arduino:", raw)
+
+                try:
+                    distance, visibility, camera = parse_arduino_line(raw)
+                    update_data(distance, visibility, camera, source="arduino")
+                    current_state["arduino_connected"] = True
+                except Exception as parse_error:
+                    print("Parse error:", parse_error)
+
+        except Exception as connection_error:
+            current_state["arduino_connected"] = False
+            print("❌ Arduino connection failed:", connection_error)
+            time.sleep(2)
+
+
+# ===== PAGE ROUTES =====
 @app.route("/")
 def home():
-    return render_template("index.html", page_title="Home")
-
-
-@app.route("/about")
-def about():
-    return render_template("about.html", page_title="About")
-
-
-@app.route("/features")
-def features():
-    return render_template("features.html", page_title="Features")
+    return render_template("dashboard.html", page_title="Dashboard")
 
 
 @app.route("/dashboard")
@@ -124,32 +323,45 @@ def dashboard():
 
 @app.route("/alerts")
 def alerts():
-    return render_template("alerts.html", page_title="Safety Alerts")
+    return render_template("alerts.html", page_title="Alerts")
 
 
-@app.route("/contact")
-def contact():
-    return render_template("contact.html", page_title="Contact")
+@app.route("/about")
+def about():
+    return render_template("about.html", page_title="About")
 
 
+# ===== API ROUTES =====
 @app.route("/api/status", methods=["GET"])
 def get_status():
-    return jsonify({"success": True, "data": current_state})
+    return jsonify({
+        "success": True,
+        "data": current_state
+    })
 
 
 @app.route("/api/logs", methods=["GET"])
 def get_logs():
-    return jsonify({"success": True, "logs": hazard_logs})
+    return jsonify({
+        "success": True,
+        "logs": hazard_logs
+    })
 
 
 @app.route("/api/alert-logs", methods=["GET"])
 def get_alert_logs():
-    return jsonify({"success": True, "logs": alert_logs})
+    return jsonify({
+        "success": True,
+        "logs": alert_logs
+    })
 
 
 @app.route("/api/contact", methods=["GET"])
 def get_contact():
-    return jsonify({"success": True, "contact": trusted_contact})
+    return jsonify({
+        "success": True,
+        "contact": trusted_contact
+    })
 
 
 @app.route("/api/contact", methods=["POST"])
@@ -162,17 +374,19 @@ def save_contact():
     if not name or not raw_contact:
         return jsonify({
             "success": False,
-            "message": "Both name and email are required."
+            "message": "Both name and trusted contact info are required."
         }), 400
 
-    if not is_valid_email(raw_contact):
+    contact_type = detect_contact_type(raw_contact)
+    if contact_type == "unknown":
         return jsonify({
             "success": False,
-            "message": "Enter a valid email address."
+            "message": "Enter a valid email address or phone number in international format."
         }), 400
 
     trusted_contact["name"] = name
     trusted_contact["contact"] = raw_contact
+    trusted_contact["contact_type"] = contact_type
     save_trusted_contact_to_file(trusted_contact)
 
     return jsonify({
@@ -189,25 +403,14 @@ def update_sensor_data():
     try:
         distance = float(data.get("distance", current_state["distance"]))
         visibility = float(data.get("visibility", current_state["visibility"]))
-    except (ValueError, TypeError):
+        camera_status = str(data.get("camera_status", current_state["camera_status"])).strip() or "Idle"
+    except (TypeError, ValueError):
         return jsonify({
             "success": False,
-            "message": "Invalid sensor values."
+            "message": "Distance and visibility must be numeric."
         }), 400
 
-    camera_status = str(data.get("camera_status", current_state["camera_status"])).strip()
-
-    status, environment = determine_status(distance, visibility)
-
-    current_state["distance"] = distance
-    current_state["visibility"] = visibility
-    current_state["status"] = status
-    current_state["environment"] = environment
-    current_state["camera_status"] = camera_status
-    current_state["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    if status in ["WARNING", "DANGER"]:
-        add_hazard_log(distance, visibility, status, environment)
+    update_data(distance, visibility, camera_status, source="manual")
 
     return jsonify({
         "success": True,
@@ -219,37 +422,31 @@ def update_sensor_data():
 @app.route("/api/simulate", methods=["POST"])
 def simulate_state():
     data = request.get_json(silent=True) or {}
-    mode = str(data.get("mode", "safe")).lower()
+    mode = str(data.get("mode", "safe")).strip().lower()
 
     if mode == "safe":
-        distance = 12
-        visibility = 250
+        distance = 30
+        visibility = 300
         camera_status = "Idle"
     elif mode == "warning":
-        distance = 12
-        visibility = 750
+        distance = 10
+        visibility = 300
+        camera_status = "Monitoring"
+    elif mode == "night":
+        distance = 30
+        visibility = 820
         camera_status = "Monitoring"
     elif mode == "danger":
-        distance = 28
-        visibility = 780
-        camera_status = "Snapshot captured"
+        distance = 55
+        visibility = 300
+        camera_status = "Monitoring"
     else:
         return jsonify({
             "success": False,
             "message": "Invalid simulation mode."
         }), 400
 
-    status, environment = determine_status(distance, visibility)
-
-    current_state["distance"] = distance
-    current_state["visibility"] = visibility
-    current_state["status"] = status
-    current_state["environment"] = environment
-    current_state["camera_status"] = camera_status
-    current_state["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    if status in ["WARNING", "DANGER"]:
-        add_hazard_log(distance, visibility, status, environment)
+    update_data(distance, visibility, camera_status, source="simulation")
 
     return jsonify({
         "success": True,
@@ -259,70 +456,61 @@ def simulate_state():
 
 
 @app.route("/api/checkin", methods=["POST"])
-def checkin():
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    add_alert_log("Check-In", f"Accessibility check-in recorded at {timestamp}.")
+def send_checkin():
+    if trusted_contact["contact_type"] == "unknown":
+        return jsonify({
+            "success": False,
+            "message": "Set a trusted contact before sending a check-in."
+        }), 400
+
+    message = build_alert_message("Check-In")
+    add_alert_log("Check-In", message, transport="dashboard preview")
+
     return jsonify({
         "success": True,
+        "timestamp": now_string(),
         "message": "Check-in recorded successfully.",
-        "timestamp": timestamp
+        "contact": trusted_contact
     })
 
 
 @app.route("/api/send-alert", methods=["POST"])
 def send_alert():
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    contact_email = str(trusted_contact.get("contact", "")).strip()
-
-    if not contact_email or contact_email == "Not set":
+    if trusted_contact["contact_type"] == "unknown":
         return jsonify({
             "success": False,
-            "message": "No trusted contact email saved."
-        }), 400
-
-    if not is_valid_email(contact_email):
-        return jsonify({
-            "success": False,
-            "message": "Saved trusted contact is not a valid email address."
+            "message": "Set a valid trusted contact first."
         }), 400
 
     subject = "EdgeSense Emergency Alert"
-    alert_message = (
-        f"EdgeSense Emergency Alert\n\n"
-        f"Time: {timestamp}\n"
-        f"Trusted Contact: {trusted_contact['name']}\n"
-        f"Status: {current_state['status']}\n"
-        f"Environment: {current_state['environment']}\n"
-        f"Distance: {current_state['distance']} cm\n"
-        f"Visibility: {current_state['visibility']}\n"
-        f"Camera: {current_state['camera_status']}\n"
-        f"Last Updated: {current_state['last_updated'] or 'Not available'}\n\n"
-        f"This alert was triggered from the EdgeSense dashboard."
-    )
-
-    add_alert_log("Help Alert", alert_message)
+    alert_message = build_alert_message("Emergency Alert")
+    transport = "dashboard preview"
 
     try:
-        send_email_alert(contact_email, subject, alert_message)
+        if trusted_contact["contact_type"] == "email":
+            send_email_alert(trusted_contact["contact"], subject, alert_message)
+            transport = "email"
+        else:
+            transport = "phone-ready (dashboard preview only)"
+
+        add_alert_log("Emergency Alert", alert_message, transport=transport)
 
         return jsonify({
             "success": True,
-            "message": "Emergency email sent successfully.",
-            "timestamp": timestamp,
-            "contact": trusted_contact,
+            "timestamp": now_string(),
+            "transport": transport,
             "subject": subject,
             "alert_message": alert_message,
-            "transport": "email"
+            "contact": trusted_contact
         })
 
     except Exception as e:
-        print("EMAIL ERROR:", str(e))
         return jsonify({
             "success": False,
-            "message": f"Email send failed: {str(e)}"
+            "message": str(e)
         }), 500
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="127.0.0.1", port=8000)
+    threading.Thread(target=read_arduino_loop, daemon=True).start()
+    app.run(debug=True)

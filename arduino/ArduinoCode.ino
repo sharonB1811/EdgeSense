@@ -1,61 +1,79 @@
-
-// constants won't change
-const int TRIG_PIN = 6; // Arduino pin connected to Ultrasonic Sensor's TRIG pin
-const int ECHO_PIN = 7; // Arduino pin connected to Ultrasonic Sensor's ECHO pin
-const int LED_PIN  = 3; // Arduino pin connected to LED's pin
+// ===== PIN SETUP =====
+const int TRIG_PIN = 6;
+const int ECHO_PIN = 7;
+const int LED_PIN  = 3;
 const int BUTTON_PIN = 2;
-const int FLOOR_DISTANCE_THRESHOLD = 15; // centimeters
+
+// ===== THRESHOLDS =====
+const int FLOOR_DISTANCE_THRESHOLD = 15; // cm
 const int MAX_DISTANCE_THRESHOLD = 42;
 
-// variables will change:
+// ===== VARIABLES =====
 float duration_us, distance_cm;
+int visibility = 300;         // simulated value
+String cameraStatus = "Idle";
 
 void setup() {
-  Serial.begin (9600);       // initialize serial port
-  pinMode(TRIG_PIN, OUTPUT); // set arduino pin to output mode
-  pinMode(ECHO_PIN, INPUT);  // set arduino pin to input mode
-  pinMode(LED_PIN, OUTPUT);  // set arduino pin to output mode
+  Serial.begin(9600);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 }
 
 void loop() {
-  if (digitalRead(BUTTON_PIN) == LOW){
-    Serial.println("CAPTURE");
-    delay(200);
+
+  // ===== BUTTON → CAMERA TRIGGER =====
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    cameraStatus = "Capture";
+  } else {
+    cameraStatus = "Idle";
   }
-  // generate 10-microsecond pulse to TRIG pin
+
+  // ===== ULTRASONIC SENSOR =====
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
-  // measure duration of pulse from ECHO pin
-  duration_us = pulseIn(ECHO_PIN, HIGH);
-  // calculate the distance
+
+  duration_us = pulseIn(ECHO_PIN, HIGH, 30000); // timeout added
+
+  // ===== VALIDATION (IMPORTANT) =====
+  if (duration_us == 0) {
+    // no signal → skip this loop
+    delay(100);
+    return;
+  }
+
   distance_cm = 0.017 * duration_us;
 
-  if(distance_cm < FLOOR_DISTANCE_THRESHOLD){
-    digitalWrite(LED_PIN, HIGH); // turn on LED
-    delay(2000);
-    Serial.println("SURFACE UP FRONT");
-    Serial.print("distance: ");
-    Serial.print(distance_cm);
-    Serial.println(" cm");
-    digitalWrite(LED_PIN, LOW);
+  // ignore unrealistic readings
+  if (distance_cm < 2 || distance_cm > 400) {
+    delay(100);
+    return;
   }
-  else if (distance_cm > MAX_DISTANCE_THRESHOLD){
-    digitalWrite(LED_PIN, HIGH);
-    delay(200);
-    Serial.println("WATCH OUT FOR DOWNSTAIRS");
-    Serial.print("distance: ");
-    Serial.print(distance_cm);
-    Serial.println(" cm");
-    digitalWrite(LED_PIN, LOW);
+
+  // ===== LED LOGIC =====
+  if (distance_cm < FLOOR_DISTANCE_THRESHOLD) {
+    digitalWrite(LED_PIN, HIGH);  // obstacle close
+  }
+  else if (distance_cm > MAX_DISTANCE_THRESHOLD) {
+    digitalWrite(LED_PIN, HIGH);  // drop-off
   }
   else {
-    digitalWrite(LED_PIN, LOW); // turn off LED
-    Serial.println("ALL IS CLEAR");  // turn off LED
-    Serial.print("distance: ");
-    Serial.print(distance_cm);
-    Serial.println(" cm");
+    digitalWrite(LED_PIN, LOW);   // safe
   }
-  delay(100);
+
+  // ===== STRUCTURED SERIAL OUTPUT =====
+  Serial.print("DIST:");
+  Serial.print(distance_cm, 2);   // 2 decimal precision
+  Serial.print(",VIS:");
+  Serial.print(visibility);
+  Serial.print(",CAM:");
+  Serial.println(cameraStatus);
+
+  delay(200);
 }

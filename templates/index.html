@@ -10,8 +10,12 @@
             <p class="hero-description">
                 EdgeSense is a wearable accessibility-focused mobility support system that helps users detect stairs,
                 curbs, ledges, and sudden drop-offs before a dangerous misstep happens. Designed for both indoor and
-                outdoor use, it supports safer movement in hallways, stairwells, sidewalks, campus spaces, and
-                low-visibility environments.
+                outdoor use, it supports safer movement in hallways, stairwells, sidewalks, campus spaces, and both
+                well-lit and low-visibility environments.
+            </p>
+
+            <p class="hero-highlight">
+                Designed to work even when visibility fails—because accessibility tools should not depend on light.
             </p>
 
             <div class="hero-buttons">
@@ -23,7 +27,7 @@
                 <span>Drop-Off Detection</span>
                 <span>Indoor + Outdoor Use</span>
                 <span>Accessibility Support</span>
-                <span>Quick Safety Actions</span>
+                <span>Day + Night Reliability</span>
             </div>
         </div>
 
@@ -46,13 +50,14 @@
                     <h2>12 cm</h2>
                 </div>
                 <div class="sensor-card">
-                    <p>Visibility Risk</p>
-                    <h2>Medium</h2>
+                    <p>Visibility Context</p>
+                    <h2>Limited</h2>
                 </div>
             </div>
 
             <div class="panel-note">
-                Detects elevation changes like stairs and curbs while also supporting awareness in low-visibility conditions.
+                Detects elevation changes like stairs and curbs while continuing to support safe navigation in both
+                daylight and low-light conditions.
             </div>
         </div>
     </div>
@@ -103,11 +108,10 @@
                 <p>Review the hardware and software capabilities that support safer walking indoors and outdoors.</p>
             </a>
 
-
             <a href="{{ url_for('dashboard') }}" class="feature-card card-link">
                 <div class="feature-icon">03</div>
                 <h3>Dashboard</h3>
-                <p>Use the live interface to simulate safe, warning, and danger conditions.</p>
+                <p>Use the live interface to simulate safe, warning, night, and danger conditions.</p>
             </a>
 
             <a href="{{ url_for('alerts') }}" class="feature-card card-link">

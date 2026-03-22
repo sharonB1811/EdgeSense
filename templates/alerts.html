@@ -21,8 +21,8 @@
                     <label for="contactName">Name</label>
                     <input type="text" id="contactName" placeholder="Enter trusted contact name">
 
-                    <label for="contactInfo">Email Address</label>
-                    <input type="email" id="contactInfo" placeholder="Enter trusted contact email">
+                    <label for="contactInfo">Contact (Email or Phone)</label>
+                    <input type="text" id="contactInfo" placeholder="Enter email or phone (+1...)">
 
                     <button class="btn btn-secondary" onclick="saveTrustedContact()">Save Contact</button>
                     <p id="contactMessage" class="small-message"></p>
@@ -31,17 +31,18 @@
                 <div class="manual-update">
                     <h4>Current Trusted Contact</h4>
                     <p class="contact-display"><strong>Name:</strong> <span id="savedContactName">Not set</span></p>
-                    <p class="contact-display"><strong>Email:</strong> <span id="savedContactInfo">Not set</span></p>
+                    <p class="contact-display"><strong>Contact:</strong> <span id="savedContactInfo">Not set</span></p>
+                    <p class="contact-display"><strong>Type:</strong> <span id="savedContactType">unknown</span></p>
                 </div>
             </div>
 
             <div class="control-panel">
                 <h3>Support Actions</h3>
-                <p>Use these features to simulate assistance and send an emergency email during your demo.</p>
+                <p>Use these features to simulate real-world safety actions, including check-ins and emergency alerts to a trusted contact.</p>
 
                 <div class="button-stack">
                     <button class="btn btn-primary" onclick="sendCheckin()">Quick Check-In</button>
-                    <button class="btn btn-danger" onclick="sendHelpAlert()">Send Emergency Email</button>
+                    <button class="btn btn-danger" onclick="sendHelpAlert()">Send Emergency Alert</button>
                 </div>
 
                 <div class="manual-update">
@@ -62,7 +63,7 @@
         <div class="logs-section">
             <h3>Alert History</h3>
             <div id="alertLogContainer" class="log-container">
-                <p class="empty-log">No check-ins or help alerts yet.</p>
+                <p class="empty-log">No check-ins or emergency alerts yet.</p>
             </div>
         </div>
     </div>

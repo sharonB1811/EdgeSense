@@ -2,8 +2,8 @@ async function fetchStatus() {
     try {
         const response = await fetch("/api/status");
         const result = await response.json();
-        if (!result.success) return;
 
+        if (!result.success || !result.data) return;
         const data = result.data;
 
         const statusBox = document.getElementById("statusBox");
@@ -14,35 +14,25 @@ async function fetchStatus() {
         const lastUpdated = document.getElementById("lastUpdated");
         const dashboardStatusTitle = document.getElementById("dashboardStatusTitle");
         const dashboardEnvironment = document.getElementById("dashboardEnvironment");
+        const hazardReason = document.getElementById("hazardReason");
+        const mobilityMessage = document.getElementById("mobilityMessage");
 
-        if (statusBox && statusLabel) {
-            statusBox.className = "status-box " + data.status.toLowerCase();
-            statusLabel.textContent = data.status;
+        if (statusBox) {
+            statusBox.className = "status-box";
+            if (data.status) {
+                statusBox.classList.add(data.status.toLowerCase());
+            }
         }
 
-        if (distanceValue) {
-            distanceValue.textContent = `${data.distance} cm`;
-        }
-
-        if (visibilityValue) {
-            visibilityValue.textContent = `${data.visibility}`;
-        }
-
-        if (cameraStatus) {
-            cameraStatus.textContent = data.camera_status;
-        }
-
-        if (lastUpdated) {
-            lastUpdated.textContent = data.last_updated || "Not yet updated";
-        }
-
-        if (dashboardStatusTitle) {
-            dashboardStatusTitle.textContent = data.status;
-        }
-
-        if (dashboardEnvironment) {
-            dashboardEnvironment.textContent = data.environment;
-        }
+        if (statusLabel) statusLabel.textContent = data.status || "SAFE";
+        if (distanceValue) distanceValue.textContent = `${data.distance ?? "--"} cm`;
+        if (visibilityValue) visibilityValue.textContent = `${data.visibility ?? "--"}`;
+        if (cameraStatus) cameraStatus.textContent = data.camera_status || "Idle";
+        if (lastUpdated) lastUpdated.textContent = data.last_updated || "Not yet updated";
+        if (dashboardStatusTitle) dashboardStatusTitle.textContent = data.status || "SAFE";
+        if (dashboardEnvironment) dashboardEnvironment.textContent = data.environment || "Stable walking surface";
+        if (hazardReason) hazardReason.textContent = data.hazard_reason || "No immediate hazard detected.";
+        if (mobilityMessage) mobilityMessage.textContent = data.mobility_message || "Path appears stable.";
     } catch (error) {
         console.error("Error fetching status:", error);
     }
@@ -52,24 +42,28 @@ async function fetchLogs() {
     try {
         const response = await fetch("/api/logs");
         const result = await response.json();
+
         if (!result.success) return;
 
         const logContainer = document.getElementById("logContainer");
         if (!logContainer) return;
 
-        const logs = result.logs;
+        const logs = result.logs || [];
 
         if (logs.length === 0) {
-            logContainer.innerHTML = `<p class="empty-log">No warnings or danger events yet.</p>`;
+            logContainer.innerHTML = `<p class="empty-log">No mobility hazard events recorded yet.</p>`;
             return;
         }
 
         logContainer.innerHTML = logs.map(log => `
             <div class="log-item">
-                <strong>${log.status} - ${log.environment}</strong>
-                <p>Distance: ${log.distance} cm</p>
-                <p>Visibility Risk: ${log.visibility}</p>
-                <p>Time: ${log.timestamp}</p>
+                <strong>${log.status} · ${log.environment}</strong>
+                <p><span class="log-label">Hazard:</span> ${log.hazard_reason}</p>
+                <p><span class="log-label">Ground Distance:</span> ${log.distance} cm</p>
+                <p><span class="log-label">Visibility Context:</span> ${log.visibility}</p>
+                <p><span class="log-label">Camera:</span> ${log.camera_status}</p>
+                <p><span class="log-label">Mobility Guidance:</span> ${log.mobility_message}</p>
+                <p><span class="log-label">Time:</span> ${log.timestamp}</p>
             </div>
         `).join("");
     } catch (error) {
@@ -81,24 +75,26 @@ async function fetchAlertLogs() {
     try {
         const response = await fetch("/api/alert-logs");
         const result = await response.json();
+
         if (!result.success) return;
 
         const alertLogContainer = document.getElementById("alertLogContainer");
         if (!alertLogContainer) return;
 
-        const logs = result.logs;
+        const logs = result.logs || [];
 
         if (logs.length === 0) {
-            alertLogContainer.innerHTML = `<p class="empty-log">No check-ins or help alerts yet.</p>`;
+            alertLogContainer.innerHTML = `<p class="empty-log">No check-ins or emergency alerts yet.</p>`;
             return;
         }
 
         alertLogContainer.innerHTML = logs.map(log => `
             <div class="log-item">
                 <strong>${log.type}</strong>
-                <p>${log.message.replace(/\n/g, "<br>")}</p>
-                <p>Trusted Contact: ${log.contact_name} (${log.contact})</p>
-                <p>Time: ${log.timestamp}</p>
+                <p><span class="log-label">Delivery:</span> ${log.transport || "dashboard preview"}</p>
+                <p>${(log.message || "").replace(/\n/g, "<br>")}</p>
+                <p><span class="log-label">Trusted Contact:</span> ${log.contact_name} (${log.contact})</p>
+                <p><span class="log-label">Time:</span> ${log.timestamp}</p>
             </div>
         `).join("");
     } catch (error) {
@@ -110,28 +106,26 @@ async function fetchTrustedContact() {
     try {
         const response = await fetch("/api/contact");
         const result = await response.json();
+
         if (!result.success) return;
 
-        const contact = result.contact;
+        const contact = result.contact || {};
 
         const savedName = document.getElementById("savedContactName");
         const savedInfo = document.getElementById("savedContactInfo");
+        const savedType = document.getElementById("savedContactType");
         const nameInput = document.getElementById("contactName");
         const infoInput = document.getElementById("contactInfo");
 
-        if (savedName) {
-            savedName.textContent = contact.name;
-        }
+        if (savedName) savedName.textContent = contact.name || "Not set";
+        if (savedInfo) savedInfo.textContent = contact.contact || "Not set";
+        if (savedType) savedType.textContent = contact.contact_type || "unknown";
 
-        if (savedInfo) {
-            savedInfo.textContent = contact.contact;
-        }
-
-        if (nameInput && contact.name !== "Not set") {
+        if (nameInput && contact.name && contact.name !== "Not set") {
             nameInput.value = contact.name;
         }
 
-        if (infoInput && contact.contact !== "Not set") {
+        if (infoInput && contact.contact && contact.contact !== "Not set") {
             infoInput.value = contact.contact;
         }
     } catch (error) {
@@ -160,20 +154,17 @@ async function saveTrustedContact() {
 
         const result = await response.json();
 
+        if (contactMessage) {
+            contactMessage.textContent = result.message || (result.success ? "Trusted contact saved." : "Failed to save trusted contact.");
+        }
+
         if (result.success) {
-            if (contactMessage) {
-                contactMessage.textContent = result.message;
-            }
             await fetchTrustedContact();
-        } else {
-            if (contactMessage) {
-                contactMessage.textContent = result.message || "Failed to save contact.";
-            }
         }
     } catch (error) {
         console.error("Error saving trusted contact:", error);
         if (contactMessage) {
-            contactMessage.textContent = "Error saving contact.";
+            contactMessage.textContent = "Error saving trusted contact.";
         }
     }
 }
@@ -185,7 +176,7 @@ async function simulateMode(mode) {
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ mode: mode })
+            body: JSON.stringify({ mode })
         });
 
         const result = await response.json();
@@ -240,16 +231,13 @@ async function sendCheckin() {
 
         const result = await response.json();
 
-        if (result.success) {
-            if (checkinMessage) {
-                checkinMessage.textContent = `Check-in recorded at ${result.timestamp}`;
-            }
-            await fetchAlertLogs();
-        } else {
-            if (checkinMessage) {
-                checkinMessage.textContent = result.message || "Check-in failed.";
-            }
+        if (checkinMessage) {
+            checkinMessage.textContent = result.success
+                ? `Check-in recorded at ${result.timestamp}`
+                : (result.message || "Check-in failed.");
         }
+
+        await fetchAlertLogs();
     } catch (error) {
         console.error("Error sending check-in:", error);
         if (checkinMessage) {
@@ -271,21 +259,18 @@ async function sendHelpAlert() {
 
         if (result.success) {
             if (alertMessage) {
-                alertMessage.textContent =
-                    `Emergency email sent at ${result.timestamp}`;
+                alertMessage.textContent = `Emergency alert recorded at ${result.timestamp}`;
             }
 
             if (alertPreview) {
                 alertPreview.innerHTML = `
-                    <strong>Alert sent to:</strong> ${result.contact.name} (${result.contact.contact})<br><br>
-                    <strong>Transport:</strong> ${result.transport}<br>
+                    <strong>Alert recipient:</strong> ${result.contact.name} (${result.contact.contact})<br><br>
+                    <strong>Delivery:</strong> ${result.transport}<br>
                     <strong>Subject:</strong> ${result.subject}<br><br>
                     <strong>Message:</strong><br>
                     ${result.alert_message.replace(/\n/g, "<br>")}
                 `;
             }
-
-            await fetchAlertLogs();
         } else {
             if (alertMessage) {
                 alertMessage.textContent = `Error: ${result.message}`;
@@ -298,6 +283,8 @@ async function sendHelpAlert() {
                 `;
             }
         }
+
+        await fetchAlertLogs();
     } catch (error) {
         console.error("Error sending help alert:", error);
 
@@ -308,10 +295,17 @@ async function sendHelpAlert() {
         if (alertPreview) {
             alertPreview.innerHTML = `
                 <strong>Request failed.</strong><br><br>
-                Check Flask terminal and browser console for details.
+                Check the Flask terminal and browser console for details.
             `;
         }
     }
+}
+
+function startAutoRefresh() {
+    setInterval(async () => {
+        await fetchStatus();
+        await fetchLogs();
+    }, 1000);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -319,4 +313,5 @@ document.addEventListener("DOMContentLoaded", async () => {
     await fetchLogs();
     await fetchAlertLogs();
     await fetchTrustedContact();
+    startAutoRefresh();
 });

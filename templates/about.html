@@ -1,70 +1,150 @@
 {% extends "base.html" %}
 
 {% block content %}
+
+<!-- ===== HERO ===== -->
 <section class="page-hero">
     <div class="container narrow">
-        <p class="section-eyebrow">About</p>
-        <h1 class="page-title">An accessibility-focused system for safer walking in everyday spaces</h1>
+        <p class="section-eyebrow">About EdgeSense</p>
+        <h1 class="page-title">
+            An accessibility-focused system for safer, more independent movement
+        </h1>
         <p class="page-subtitle">
-            EdgeSense is designed to help users notice dangerous walking hazards like stairs, curbs, and sudden drop-offs
-            before a misstep happens.
+            EdgeSense helps users detect drop-offs like stairs, curbs, and ledges in real time,
+            providing reliable navigation support in both daylight and low-visibility environments.
         </p>
     </div>
 </section>
 
+<!-- ===== PROBLEM ===== -->
 <section class="section">
     <div class="container section-grid">
         <div>
-            <h2>The problem</h2>
+            <h2>The Problem</h2>
             <p>
-                Many existing mobility and safety tools focus on what is directly in front of a person, but some of the most
-                dangerous hazards are actually below them. Stairs, curbs, ledges, and sudden changes in walking surface height
-                are common in both indoor and outdoor environments.
+                Many mobility and safety systems focus on obstacles directly in front of a person,
+                but some of the most dangerous hazards are actually below them. Stairs, curbs,
+                ledges, and sudden changes in elevation are common in both indoor and outdoor environments.
             </p>
             <p>
-                These hazards can lead to trips, falls, and injuries for a wide range of people, including visually impaired
-                users, elderly individuals, students, and anyone navigating unfamiliar spaces.
+                These hazards are especially dangerous for individuals with visual impairments,
+                mobility challenges, or those navigating unfamiliar environments. A single missed step
+                can lead to serious injury.
+            </p>
+            <p>
+                Existing solutions often rely heavily on vision-based systems, which fail in low-light
+                or nighttime conditions—leaving a critical gap in accessibility and safety.
             </p>
         </div>
 
         <div class="info-card">
-            <h3>Common hazard areas</h3>
+            <h3>Where hazards occur</h3>
             <ul>
                 <li>Indoor stairwells and hallways</li>
                 <li>Building entrances and ramps</li>
-                <li>Outdoor curbs and sidewalks</li>
-                <li>Low-visibility or unfamiliar areas</li>
+                <li>Outdoor sidewalks and curbs</li>
+                <li>Low-light or unfamiliar environments</li>
             </ul>
         </div>
     </div>
 </section>
 
+<!-- ===== SOLUTION ===== -->
 <section class="section alt">
     <div class="container section-grid">
         <div>
-            <h2>The solution</h2>
+            <h2>The Solution</h2>
             <p>
-                EdgeSense is a wearable mobility support system that detects sudden changes in ground level and warns the user
-                before they take a dangerous step. It combines sensing, feedback, and simple safety actions to improve walking
-                accessibility in everyday environments.
+                EdgeSense is a wearable mobility support system that continuously measures ground distance
+                to detect elevation changes before a user takes a step. When a drop-off or hazard is detected,
+                the system provides immediate feedback to help prevent falls.
             </p>
             <p>
-                While the system provides extra value in low-light conditions, its main purpose is broader: helping users move
-                more safely and confidently indoors and outdoors.
+                Unlike traditional systems, EdgeSense does not depend on lighting conditions. By using
+                distance-based sensing, it remains effective in both bright and dark environments,
+                making it a reliable accessibility tool for everyday use.
+            </p>
+            <p>
+                In addition to hazard detection, EdgeSense includes user-controlled safety features like
+                quick check-ins and emergency alerts to trusted contacts.
             </p>
         </div>
 
-
-
         <div class="info-card">
-            <h3>What makes it different</h3>
+            <h3>What makes EdgeSense different</h3>
             <ul>
-                <li>Focuses on drop-offs and elevation changes</li>
-                <li>Works across indoor and outdoor spaces</li>
-                <li>Combines accessibility support with safety actions</li>
-                <li>Built for fast, understandable feedback</li>
+                <li>Real-time drop-off detection (stairs, curbs, ledges)</li>
+                <li>Works in both day and night conditions</li>
+                <li>Light-independent sensing for reliability</li>
+                <li>Built-in emergency alert and check-in system</li>
             </ul>
         </div>
     </div>
 </section>
+
+<!-- ===== HOW IT WORKS ===== -->
+<section class="section">
+    <div class="container">
+        <h2>How It Works</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <h3>Ultrasonic Sensing</h3>
+                <p>
+                    Continuously measures distance to the ground to detect sudden changes in elevation.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <h3>Real-Time Alerts</h3>
+                <p>
+                    Notifies the user immediately when a potential hazard is detected.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <h3>User Safety Controls</h3>
+                <p>
+                    A built-in button allows users to send quick check-ins or emergency alerts.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <h3>Context Awareness</h3>
+                <p>
+                    Optional camera and dashboard provide additional environmental context during alerts.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===== IMPACT ===== -->
+<section class="section alt">
+    <div class="container">
+        <h2>Impact</h2>
+        <p>
+            EdgeSense improves accessibility by giving users greater awareness of their environment,
+            helping prevent falls and increasing confidence in daily movement.
+        </p>
+        <p>
+            By working independently of lighting conditions, it ensures consistent support across
+            different environments—indoors, outdoors, day, or night.
+        </p>
+    </div>
+</section>
+
+<!-- ===== TEAM ===== -->
+<section class="section">
+    <div class="container">
+        <h2>Team</h2>
+
+        <div class="info-card">
+            <p><strong>Team Name:</strong> SE³E</p>
+            <p><strong>Members:</strong> Add your names here</p>
+            <p><strong>Hackathon:</strong> Add hackathon name here</p>
+            <p><strong>Tech Stack:</strong> Flask, Python, Arduino, HTML, CSS, JavaScript</p>
+        </div>
+    </div>
+</section>
+
 {% endblock %}
