@@ -8,9 +8,17 @@ import time
 import boto3
 import serial
 from serial.tools import list_ports
+from botocore.exceptions import BotoCoreError, ClientError
+
+# ===== APP SETUP =====
+app = Flask(__name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONTACT_FILE = os.path.join(BASE_DIR, "trusted_contact.json")
 
 # ===== AWS SES =====
-ses_client = boto3.client("ses")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
+ses_client = boto3.client("ses", region_name=AWS_REGION)
 
 # ===== OPTIONAL CAMERA =====
 try:
@@ -18,17 +26,19 @@ try:
     WEBCAM_AVAILABLE = True
 except Exception as e:
     WEBCAM_AVAILABLE = False
+    analyze_webcam_hazards = None
     print("Webcam not available:", e)
-
-app = Flask(__name__)
-
-# ===== FILE SETUP =====
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONTACT_FILE = os.path.join(BASE_DIR, "trusted_contact.json")
 
 # ===== THRESHOLDS =====
 FLOOR_DISTANCE_THRESHOLD = 15
 MAX_DISTANCE_THRESHOLD = 42
+
+# ===== DEFAULT CONTACT =====
+DEFAULT_CONTACT = {
+    "name": "Not set",
+    "contact": "Not set",
+    "contact_type": "unknown"
+}
 
 # ===== GLOBAL STATE =====
 current_state = {
@@ -50,46 +60,70 @@ current_state = {
 hazard_logs = []
 alert_logs = []
 
+
 # ===== HELPERS =====
 def now_string():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+
 def is_valid_email(value):
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", str(value).strip()))
+
 
 def detect_contact_type(value):
     if is_valid_email(value):
         return "email"
     return "unknown"
 
-# ===== CONTACT =====
-def load_trusted_contact():
-    if os.path.exists(CONTACT_FILE):
-        try:
-            with open(CONTACT_FILE, "r") as f:
-                data = json.load(f)
-                contact_value = str(data.get("contact", "Not set")).strip()
-                return {
-                    "name": data.get("name", "Not set"),
-                    "contact": contact_value,
-                    "contact_type": detect_contact_type(contact_value)
-                }
-        except:
-            pass
 
-    return {"name": "Not set", "contact": "Not set", "contact_type": "unknown"}
+# ===== CONTACT PERSISTENCE =====
+def ensure_contact_file_exists():
+    if not os.path.exists(CONTACT_FILE):
+        with open(CONTACT_FILE, "w", encoding="utf-8") as f:
+            json.dump(DEFAULT_CONTACT, f, indent=2)
+
+
+def load_trusted_contact():
+    ensure_contact_file_exists()
+
+    try:
+        with open(CONTACT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        name = str(data.get("name", "Not set")).strip() or "Not set"
+        contact = str(data.get("contact", "Not set")).strip() or "Not set"
+        contact_type = detect_contact_type(contact)
+
+        return {
+            "name": name,
+            "contact": contact,
+            "contact_type": contact_type if contact != "Not set" else "unknown"
+        }
+    except Exception as e:
+        print("Could not load trusted contact:", e)
+        return DEFAULT_CONTACT.copy()
+
 
 def save_trusted_contact_to_file(data):
-    with open(CONTACT_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    payload = {
+        "name": str(data.get("name", "Not set")).strip() or "Not set",
+        "contact": str(data.get("contact", "Not set")).strip() or "Not set",
+        "contact_type": str(data.get("contact_type", "unknown")).strip() or "unknown"
+    }
+
+    with open(CONTACT_FILE, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
 
 trusted_contact = load_trusted_contact()
+
 
 # ===== STATUS LOGIC =====
 def determine_status(distance):
     if distance < FLOOR_DISTANCE_THRESHOLD:
         return {
             "status": "WARNING",
+            "hazard_level": "medium",
             "hazard_reason": "Surface detected close in front.",
             "environment": "Surface up front",
             "mobility_message": "Caution: something is very close ahead."
@@ -97,6 +131,7 @@ def determine_status(distance):
     elif distance > MAX_DISTANCE_THRESHOLD:
         return {
             "status": "DANGER",
+            "hazard_level": "high",
             "hazard_reason": "Possible drop-off detected.",
             "environment": "Watch out for downstairs",
             "mobility_message": "Stop. A drop-off may be ahead."
@@ -104,27 +139,50 @@ def determine_status(distance):
     else:
         return {
             "status": "SAFE",
+            "hazard_level": "none",
             "hazard_reason": "All is clear.",
             "environment": "Stable walking surface",
             "mobility_message": "Path appears clear."
         }
 
+
 # ===== EMAIL (AWS SES) =====
 def send_email_alert(to_email, subject, body):
-    sender = os.environ.get("SES_SENDER_EMAIL")
+    sender = os.environ.get("SES_SENDER_EMAIL", "").strip()
+
+    print("DEBUG sender =", repr(sender))
+    print("DEBUG recipient =", repr(to_email))
 
     if not sender:
-        raise ValueError("SES sender email not set")
+        raise ValueError("SES sender email not set.")
 
-    ses_client.send_email(
-        Source=sender,
-        Destination={"ToAddresses": [to_email]},
-        Message={
-            "Subject": {"Data": subject},
-            "Body": {"Text": {"Data": body}}
-        }
-    )
+    if not is_valid_email(to_email):
+        raise ValueError(f"Trusted contact must be a valid email address. Got: {to_email}")
 
+    try:
+        response = ses_client.send_email(
+            Source=sender,
+            Destination={"ToAddresses": [to_email]},
+            Message={
+                "Subject": {"Data": subject},
+                "Body": {"Text": {"Data": body}}
+            }
+        )
+        print("SES success:", response)
+        return response
+
+    except ClientError as e:
+        print("SES ClientError:", e.response)
+        error_message = e.response.get("Error", {}).get("Message", str(e))
+        raise RuntimeError(f"AWS SES error: {error_message}")
+
+    except BotoCoreError as e:
+        print("SES BotoCoreError:", str(e))
+        raise RuntimeError(f"AWS SES connection error: {str(e)}")
+
+    except Exception as e:
+        print("SES unknown error:", str(e))
+        raise
 # ===== ALERT MESSAGE =====
 def build_alert_message(alert_type):
     return (
@@ -132,31 +190,55 @@ def build_alert_message(alert_type):
         f"Time: {now_string()}\n"
         f"Status: {current_state['status']}\n"
         f"Hazard: {current_state['hazard_reason']}\n"
+        f"Environment: {current_state['environment']}\n"
         f"Distance: {current_state['distance']} cm\n"
-        f"Camera: {current_state['camera_hazard_result']}\n"
+        f"Visibility: {current_state['visibility']}\n"
+        f"Camera Status: {current_state['camera_status']}\n"
+        f"Camera Analysis: {current_state['camera_hazard_result']}\n"
         f"Message: {current_state['mobility_message']}"
     )
 
+
 # ===== STATE UPDATE =====
-def update_data(distance, camera_status="Idle"):
+def update_data(distance, visibility=None, camera_status="Idle", source="simulation"):
     computed = determine_status(distance)
 
     current_state.update({
-        "distance": round(distance, 2),
+        "distance": round(float(distance), 2),
+        "visibility": round(float(visibility), 2) if visibility is not None else current_state["visibility"],
         "status": computed["status"],
+        "hazard_level": computed["hazard_level"],
         "hazard_reason": computed["hazard_reason"],
         "environment": computed["environment"],
         "mobility_message": computed["mobility_message"],
-        "camera_status": camera_status,
-        "last_updated": now_string()
+        "camera_status": camera_status or "Idle",
+        "last_updated": now_string(),
+        "data_source": source
     })
 
     if current_state["status"] in ["WARNING", "DANGER"]:
-        hazard_logs.insert(0, current_state.copy())
+        log_entry = {
+            "timestamp": now_string(),
+            "distance": current_state["distance"],
+            "visibility": current_state["visibility"],
+            "status": current_state["status"],
+            "hazard_level": current_state["hazard_level"],
+            "hazard_reason": current_state["hazard_reason"],
+            "environment": current_state["environment"],
+            "camera_status": current_state["camera_status"],
+            "mobility_message": current_state["mobility_message"]
+        }
+
+        if not hazard_logs or hazard_logs[0] != log_entry:
+            hazard_logs.insert(0, log_entry)
+
+        if len(hazard_logs) > 50:
+            del hazard_logs[50:]
+
 
 # ===== CAMERA =====
 def run_camera_analysis():
-    if not WEBCAM_AVAILABLE:
+    if not WEBCAM_AVAILABLE or analyze_webcam_hazards is None:
         raise RuntimeError("Camera not available")
 
     current_state["camera_status"] = "Capturing"
@@ -166,6 +248,10 @@ def run_camera_analysis():
     current_state["camera_hazard_result"] = result
     current_state["camera_last_capture"] = now_string()
     current_state["camera_status"] = "Complete"
+    current_state["last_updated"] = now_string()
+
+    return result
+
 
 # ===== ARDUINO =====
 def find_arduino_port():
@@ -174,6 +260,7 @@ def find_arduino_port():
         if "usb" in p.device.lower():
             return p.device
     return None
+
 
 def read_arduino_loop():
     while True:
@@ -187,82 +274,239 @@ def read_arduino_loop():
         try:
             ser = serial.Serial(port, 9600, timeout=1)
             time.sleep(2)
-
             current_state["arduino_connected"] = True
 
             while True:
-                line = ser.readline().decode().strip()
+                line = ser.readline().decode(errors="ignore").strip()
 
                 if not line:
                     continue
 
                 if "DIST:" in line:
                     try:
-                        dist = float(line.split(",")[0].split(":")[1])
-                        update_data(dist)
-                    except:
-                        pass
+                        parts = {}
+                        for item in line.split(","):
+                            if ":" in item:
+                                key, value = item.split(":", 1)
+                                parts[key.strip().upper()] = value.strip()
+
+                        dist = float(parts.get("DIST", current_state["distance"]))
+                        vis = float(parts.get("VIS", current_state["visibility"]))
+                        cam = parts.get("CAM", current_state["camera_status"])
+
+                        update_data(dist, vis, cam, source="arduino")
+                    except Exception as parse_error:
+                        print("Arduino parse error:", parse_error)
 
         except Exception as e:
             current_state["arduino_connected"] = False
             print("Arduino error:", e)
             time.sleep(2)
 
+
 # ===== PAGE ROUTES =====
 @app.route("/")
 def home():
-    return render_template("dashboard.html")
+    return render_template("dashboard.html", page_title="Dashboard")
+
 
 @app.route("/dashboard")
 def dashboard():
-    return render_template("dashboard.html")
+    return render_template("dashboard.html", page_title="Dashboard")
+
 
 @app.route("/alerts")
 def alerts():
-    return render_template("alerts.html")
+    return render_template("alerts.html", page_title="Alerts")
+
 
 @app.route("/about")
 def about():
-    return render_template("about.html")
+    return render_template("about.html", page_title="About")
+
 
 # ===== API =====
 @app.route("/api/status")
 def get_status():
     return jsonify({"success": True, "data": current_state})
 
+
 @app.route("/api/logs")
 def get_logs():
     return jsonify({"success": True, "logs": hazard_logs})
+
 
 @app.route("/api/alert-logs")
 def get_alert_logs():
     return jsonify({"success": True, "logs": alert_logs})
 
+
 @app.route("/api/contact", methods=["GET"])
 def get_contact():
+    global trusted_contact
+    trusted_contact = load_trusted_contact()
     return jsonify({"success": True, "contact": trusted_contact})
+
 
 @app.route("/api/contact", methods=["POST"])
 def save_contact():
-    data = request.json
+    global trusted_contact
 
-    trusted_contact["name"] = data["name"]
-    trusted_contact["contact"] = data["contact"]
-    trusted_contact["contact_type"] = detect_contact_type(data["contact"])
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name", "")).strip()
+    contact = str(data.get("contact", "")).strip()
+
+    if not name or not contact:
+        return jsonify({
+            "success": False,
+            "message": "Please enter both a contact name and a trusted contact email."
+        }), 400
+
+    if not is_valid_email(contact):
+        return jsonify({
+            "success": False,
+            "message": "Please enter a valid email address."
+        }), 400
+
+    trusted_contact = {
+        "name": name,
+        "contact": contact,
+        "contact_type": "email"
+    }
 
     save_trusted_contact_to_file(trusted_contact)
 
-    return jsonify({"success": True, "message": "Contact saved", "contact": trusted_contact})
+    # reload from disk so UI always reflects what is actually stored
+    trusted_contact = load_trusted_contact()
+
+    return jsonify({
+        "success": True,
+        "message": "Trusted contact saved successfully.",
+        "contact": trusted_contact
+    })
+
+
+@app.route("/api/update", methods=["POST"])
+def update_sensor_data():
+    data = request.get_json(silent=True) or {}
+
+    try:
+        distance = float(data.get("distance", current_state["distance"]))
+        visibility = float(data.get("visibility", current_state["visibility"]))
+        camera_status = str(data.get("camera_status", current_state["camera_status"])).strip() or "Idle"
+    except (TypeError, ValueError):
+        return jsonify({
+            "success": False,
+            "message": "Distance and visibility must be numeric."
+        }), 400
+
+    update_data(distance, visibility, camera_status, source="manual")
+
+    return jsonify({
+        "success": True,
+        "message": "Sensor data updated successfully.",
+        "data": current_state
+    })
+
+
+@app.route("/api/simulate", methods=["POST"])
+def simulate_state():
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get("mode", "safe")).strip().lower()
+
+    if mode == "safe":
+        distance = 30
+        visibility = 300
+        camera_status = "Idle"
+    elif mode == "warning":
+        distance = 10
+        visibility = 300
+        camera_status = "Monitoring"
+    elif mode == "night":
+        distance = 30
+        visibility = 820
+        camera_status = "Monitoring"
+    elif mode == "danger":
+        distance = 55
+        visibility = 300
+        camera_status = "Monitoring"
+    else:
+        return jsonify({
+            "success": False,
+            "message": "Invalid simulation mode."
+        }), 400
+
+    update_data(distance, visibility, camera_status, source="simulation")
+
+    return jsonify({
+        "success": True,
+        "message": f"Simulated {mode} state.",
+        "data": current_state
+    })
+
+
+@app.route("/api/analyze-camera", methods=["POST"])
+def analyze_camera():
+    try:
+        result = run_camera_analysis()
+        return jsonify({
+            "success": True,
+            "camera_hazard_result": result,
+            "camera_last_capture": current_state["camera_last_capture"],
+            "camera_status": current_state["camera_status"]
+        })
+    except Exception as e:
+        current_state["camera_status"] = "Error"
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/checkin", methods=["POST"])
+def send_checkin():
+    global trusted_contact
+    trusted_contact = load_trusted_contact()
+
+    if trusted_contact["contact_type"] != "email":
+        return jsonify({
+            "success": False,
+            "message": "Please save a trusted contact email first."
+        }), 400
+
+    message = build_alert_message("Check-In")
+
+    log_entry = {
+        "timestamp": now_string(),
+        "type": "Check-In",
+        "message": message,
+        "contact_name": trusted_contact["name"],
+        "contact": trusted_contact["contact"],
+        "transport": "dashboard preview"
+    }
+    alert_logs.insert(0, log_entry)
+
+    return jsonify({
+        "success": True,
+        "timestamp": now_string(),
+        "message": "Check-in recorded successfully.",
+        "contact": trusted_contact
+    })
+
 
 @app.route("/api/send-alert", methods=["POST"])
 def send_alert():
-    if trusted_contact["contact_type"] != "email":
-        return jsonify({"success": False, "message": "Use email contact only"})
+    global trusted_contact
+    trusted_contact = load_trusted_contact()
 
+    if trusted_contact["contact_type"] != "email":
+        return jsonify({
+            "success": False,
+            "message": "Please save a valid trusted contact email first."
+        }), 400
+
+    subject = "EdgeSense Alert"
     message = build_alert_message("Emergency Alert")
 
     try:
-        send_email_alert(trusted_contact["contact"], "EdgeSense Alert", message)
+        send_email_alert(trusted_contact["contact"], subject, message)
 
         log_entry = {
             "timestamp": now_string(),
@@ -272,7 +516,6 @@ def send_alert():
             "contact": trusted_contact["contact"],
             "transport": "email"
         }
-
         alert_logs.insert(0, log_entry)
 
         return jsonify({
@@ -280,26 +523,16 @@ def send_alert():
             "timestamp": now_string(),
             "alert_message": message,
             "contact": trusted_contact,
-            "transport": "email"
+            "transport": "email",
+            "subject": subject
         })
 
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
+        return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route("/api/analyze-camera", methods=["POST"])
-def analyze_camera():
-    try:
-        run_camera_analysis()
-        return jsonify({
-            "success": True,
-            "camera_hazard_result": current_state["camera_hazard_result"],
-            "camera_last_capture": current_state["camera_last_capture"],
-            "camera_status": current_state["camera_status"]
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
 
 # ===== START =====
 if __name__ == "__main__":
+    ensure_contact_file_exists()
     threading.Thread(target=read_arduino_loop, daemon=True).start()
-    app.run(debug=True)
+    app.run(debug=True, host="127.0.0.1", port=8000)
