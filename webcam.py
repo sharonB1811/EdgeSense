@@ -1,59 +1,103 @@
 from google import genai
+import serial
+import time
+import base64
 import os
 from dotenv import load_dotenv
 from google.genai import types
 import cv2
 import base64
 
-load_dotenv()
+SERIAL_PORT = '/dev/cu.debug-console' # what is this?
+BAUD_RATE = 9600
+CAMERA_INDEX = 1
 
+# loading API client.
+load_dotenv()
 client = genai.Client(vertexai=True, project = os.getenv('GOOGLE_CLOUD_PROJECT'))
 
+def detect():
+    print("Starting image capture.")
+    cap = cv2.VideoCapture(1)  # index 1 for Logitech
 
-cap = cv2.VideoCapture(1)  # index 1 for Logitech
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # setting the camera resolution.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-ret, frame = cap.read()
-cap.release()
+    #warmup?
 
-if not ret:
-    raise RuntimeError("Failed to capture image")
+    # start read process. off camera after capture.
+    ret, frame = cap.read() # .read returns (indicator, frame) --> ret stores success/failure.
+    cap.release()
 
-cv2.imwrite("capture.jpg", frame)
+    if not ret:
+        print("Error: Failed to capture image")
+        return
 
-# Encode image to base64
-_, buffer = cv2.imencode('.jpg', frame)
-img_base64 = base64.b64encode(buffer).decode("utf-8")
+    cv2.imwrite("capture.jpg", frame)
 
-response = client.models.generate_content(
-    model='gemini-2.5-flash',
-    contents=[
-      types.Part.from_bytes(
-        data=img_base64,
-        mime_type='image/jpeg',
-      ),
-      '''
-You are analyzing an image from a shoe-mounted camera.
-Identify hazards that could cause a person walking forward to trip or fall within the next 3-4 steps.
+    # Encode image to base64
+    _, buffer = cv2.imencode('.jpg', frame)
+    img_base64 = base64.b64encode(buffer).decode("utf-8")
 
-Possible hazards include:
-- staircases or steps (up or down)
-- curbs
-- drop-offs or ledges
-- sudden changes in floor level
-- people directly in the walking path
+    print("Image captured! Sending to Gemini for analysis.")
 
-If a hazard is present, respond exactly in this format:
-HAZARD DETECTED: <comma-separated hazards>
+    try:
+        prompt = '''
+            You are analyzing an image from a shoe-mounted camera.
+            Identify hazards that could cause a person walking forward to trip or fall within the next 3-4 steps.
 
-If no hazards are present, respond exactly:
-NO HAZARD
+            Possible hazards include:
+            - staircases or steps (up or down)
+            - curbs
+            - drop-offs or ledges
+            - sudden changes in floor level
+            - people directly in the walking path
 
-Only output one of these responses. Do not add explanations or extra text.
-      '''
-    ]
-  )
+            If a hazard is present, respond exactly in this format:
+            HAZARD DETECTED: <comma-separated hazards>
 
-print("Gemini Pro output:")
-print(response.text)
+            If no hazards are present, respond exactly:
+            NO HAZARD
+
+            Only output one of these responses. Do not add explanations or extra text.
+                  '''
+        response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=[
+          types.Part.from_bytes(
+            data=img_base64,
+            mime_type='image/jpeg',
+        ),
+                ]
+      )
+        print("-" * 30)
+        # results:
+        print("Results: ", '\n')
+        print("Result: ", response.text)
+    except Exception as e:
+        print(f"Error: {e}")
+
+try:
+    # create a serial port object.
+    serialVar = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    print(f"Connected to serial port {SERIAL_PORT}. Waiting for button capture.")
+    while True:
+        # keep listening for capture - if found, run detect function.
+        if serialVar.in_waiting > 0:
+            line = serialVar.readline()
+            print(line)
+            if line == 'capture':
+                print("Capturing!!!")
+                detect()
+except serial.SerialException as se:
+    print(f"Serial Exception: {se}")
+except Exception as e:
+    print(f"Error: {e}")
+finally:
+    print("Capturing finished!");
+    serialVar.close()
+
+        
+
+
