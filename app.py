@@ -1,19 +1,17 @@
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime
-from twilio.rest import Client
-from twilio.base.exceptions import TwilioRestException
 import json
 import os
 import re
+import smtplib
+from email.message import EmailMessage
 
 app = Flask(__name__)
 
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
-TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER")
-
 CONTACT_FILE = "trusted_contact.json"
 
+ALERT_EMAIL_ADDRESS = os.environ.get("ALERT_EMAIL_ADDRESS")
+ALERT_EMAIL_APP_PASSWORD = os.environ.get("ALERT_EMAIL_APP_PASSWORD")
 
 current_state = {
     "distance": 12,
@@ -84,25 +82,24 @@ def add_alert_log(alert_type, message):
     })
 
 
-def normalize_phone_number(value):
+def is_valid_email(value):
     value = str(value).strip()
-    value = re.sub(r"[^\d+]", "", value)
-
-    if value.startswith("00"):
-        value = "+" + value[2:]
-
-    if not value.startswith("+"):
-        digits_only = re.sub(r"\D", "", value)
-        if len(digits_only) == 10:
-            value = "+1" + digits_only
-        elif len(digits_only) == 11 and digits_only.startswith("1"):
-            value = "+" + digits_only
-
-    return value
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value))
 
 
-def is_valid_e164(value):
-    return bool(re.fullmatch(r"\+[1-9]\d{7,14}", value))
+def send_email_alert(to_email, subject, body):
+    if not ALERT_EMAIL_ADDRESS or not ALERT_EMAIL_APP_PASSWORD:
+        raise ValueError("Email environment variables are missing.")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = ALERT_EMAIL_ADDRESS
+    msg["To"] = to_email
+    msg.set_content(body)
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(ALERT_EMAIL_ADDRESS, ALERT_EMAIL_APP_PASSWORD)
+        smtp.send_message(msg)
 
 
 @app.route("/")
@@ -165,19 +162,17 @@ def save_contact():
     if not name or not raw_contact:
         return jsonify({
             "success": False,
-            "message": "Both name and phone number are required."
+            "message": "Both name and email are required."
         }), 400
 
-    normalized_contact = normalize_phone_number(raw_contact)
-
-    if not is_valid_e164(normalized_contact):
+    if not is_valid_email(raw_contact):
         return jsonify({
             "success": False,
-            "message": "Enter a valid phone number in format like +15713038776."
+            "message": "Enter a valid email address."
         }), 400
 
     trusted_contact["name"] = name
-    trusted_contact["contact"] = normalized_contact
+    trusted_contact["contact"] = raw_contact
     save_trusted_contact_to_file(trusted_contact)
 
     return jsonify({
@@ -266,10 +261,10 @@ def simulate_state():
 @app.route("/api/checkin", methods=["POST"])
 def checkin():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    add_alert_log("Check-In", f"Accessibility check-in sent at {timestamp}.")
+    add_alert_log("Check-In", f"Accessibility check-in recorded at {timestamp}.")
     return jsonify({
         "success": True,
-        "message": "Check-in sent successfully.",
+        "message": "Check-in recorded successfully.",
         "timestamp": timestamp
     })
 
@@ -278,80 +273,56 @@ def checkin():
 def send_alert():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    contact_email = str(trusted_contact.get("contact", "")).strip()
+
+    if not contact_email or contact_email == "Not set":
+        return jsonify({
+            "success": False,
+            "message": "No trusted contact email saved."
+        }), 400
+
+    if not is_valid_email(contact_email):
+        return jsonify({
+            "success": False,
+            "message": "Saved trusted contact is not a valid email address."
+        }), 400
+
+    subject = "EdgeSense Emergency Alert"
     alert_message = (
-        f"EdgeSense Help Alert\n"
+        f"EdgeSense Emergency Alert\n\n"
         f"Time: {timestamp}\n"
+        f"Trusted Contact: {trusted_contact['name']}\n"
         f"Status: {current_state['status']}\n"
         f"Environment: {current_state['environment']}\n"
         f"Distance: {current_state['distance']} cm\n"
         f"Visibility: {current_state['visibility']}\n"
-        f"Camera: {current_state['camera_status']}"
+        f"Camera: {current_state['camera_status']}\n"
+        f"Last Updated: {current_state['last_updated'] or 'Not available'}\n\n"
+        f"This alert was triggered from the EdgeSense dashboard."
     )
-
-    contact_number = str(trusted_contact.get("contact", "")).strip()
-
-    if not contact_number or contact_number == "Not set":
-        return jsonify({
-            "success": False,
-            "message": "No trusted contact saved."
-        }), 400
-
-    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_FROM_NUMBER:
-        return jsonify({
-            "success": False,
-            "message": "Twilio environment variables are missing."
-        }), 500
-
-    if contact_number == TWILIO_FROM_NUMBER:
-        return jsonify({
-            "success": False,
-            "message": "Trusted contact cannot be the same as the Twilio sender number."
-        }), 400
 
     add_alert_log("Help Alert", alert_message)
 
     try:
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-        message = client.messages.create(
-            body=alert_message,
-            from_=TWILIO_FROM_NUMBER,
-            to=contact_number
-        )
-
-        print("TWILIO SID:", message.sid)
-        print("TWILIO STATUS:", message.status)
-        print("TWILIO FROM:", TWILIO_FROM_NUMBER)
-        print("TWILIO TO:", contact_number)
+        send_email_alert(contact_email, subject, alert_message)
 
         return jsonify({
             "success": True,
-            "message": "SMS request accepted by Twilio.",
+            "message": "Emergency email sent successfully.",
             "timestamp": timestamp,
-            "alert_message": alert_message,
             "contact": trusted_contact,
-            "message_sid": message.sid,
-            "twilio_status": message.status,
-            "error_code": getattr(message, "error_code", None),
-            "error_message": getattr(message, "error_message", None)
+            "subject": subject,
+            "alert_message": alert_message,
+            "transport": "email"
         })
 
-    except TwilioRestException as e:
-        print("TWILIO ERROR CODE:", e.code)
-        print("TWILIO ERROR MESSAGE:", e.msg)
-        return jsonify({
-            "success": False,
-            "message": f"Twilio error {e.code}: {e.msg}",
-            "error_code": e.code
-        }), 500
-
     except Exception as e:
-        print("TWILIO ERROR:", str(e))
+        print("EMAIL ERROR:", str(e))
         return jsonify({
             "success": False,
-            "message": str(e)
+            "message": f"Email send failed: {str(e)}"
         }), 500
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host="127.0.0.1", port=8000)

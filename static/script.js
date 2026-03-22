@@ -242,7 +242,7 @@ async function sendCheckin() {
 
         if (result.success) {
             if (checkinMessage) {
-                checkinMessage.textContent = `Check-in sent at ${result.timestamp}`;
+                checkinMessage.textContent = `Check-in recorded at ${result.timestamp}`;
             }
             await fetchAlertLogs();
         } else {
@@ -272,17 +272,14 @@ async function sendHelpAlert() {
         if (result.success) {
             if (alertMessage) {
                 alertMessage.textContent =
-                    `Alert requested at ${result.timestamp} | Twilio status: ${result.twilio_status}`;
+                    `Emergency email sent at ${result.timestamp}`;
             }
 
             if (alertPreview) {
                 alertPreview.innerHTML = `
-                    <strong>Alert requested for:</strong> ${result.contact.name} (${result.contact.contact})<br><br>
-                    <strong>Twilio SID:</strong> ${result.message_sid}<br>
-                    <strong>Initial Status:</strong> ${result.twilio_status}<br>
-                    <strong>Twilio Error Code:</strong> ${result.error_code ?? "None"}<br>
-                    <strong>Twilio Error Message:</strong> ${result.error_message ?? "None"}<br><br>
-                    <strong>Important:</strong> "queued" only means Twilio accepted the request. It does not guarantee delivery.<br><br>
+                    <strong>Alert sent to:</strong> ${result.contact.name} (${result.contact.contact})<br><br>
+                    <strong>Transport:</strong> ${result.transport}<br>
+                    <strong>Subject:</strong> ${result.subject}<br><br>
                     <strong>Message:</strong><br>
                     ${result.alert_message.replace(/\n/g, "<br>")}
                 `;
@@ -297,8 +294,7 @@ async function sendHelpAlert() {
             if (alertPreview) {
                 alertPreview.innerHTML = `
                     <strong>Alert failed.</strong><br><br>
-                    ${result.message}<br>
-                    ${result.error_code ? `<strong>Error Code:</strong> ${result.error_code}` : ""}
+                    ${result.message}
                 `;
             }
         }
@@ -317,7 +313,6 @@ async function sendHelpAlert() {
         }
     }
 }
-
 
 document.addEventListener("DOMContentLoaded", async () => {
     await fetchStatus();
