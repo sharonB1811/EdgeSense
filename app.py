@@ -27,7 +27,7 @@ try:
 except Exception as e:
     WEBCAM_AVAILABLE = False
     analyze_webcam_hazards = None
-    print("Webcam not available:", e)
+    print("Webcam not available:", e, flush=True)
 
 # ===== THRESHOLDS =====
 FLOOR_DISTANCE_THRESHOLD = 15
@@ -54,12 +54,12 @@ current_state = {
     "mobility_message": "Path appears clear.",
     "last_updated": None,
     "data_source": "simulation",
-    "arduino_connected": False
+    "arduino_connected": False,
+    "arduino_port": None
 }
 
 hazard_logs = []
 alert_logs = []
-
 
 # ===== HELPERS =====
 def now_string():
@@ -100,7 +100,7 @@ def load_trusted_contact():
             "contact_type": contact_type if contact != "Not set" else "unknown"
         }
     except Exception as e:
-        print("Could not load trusted contact:", e)
+        print("Could not load trusted contact:", e, flush=True)
         return DEFAULT_CONTACT.copy()
 
 
@@ -150,8 +150,8 @@ def determine_status(distance):
 def send_email_alert(to_email, subject, body):
     sender = os.environ.get("SES_SENDER_EMAIL", "").strip()
 
-    print("DEBUG sender =", repr(sender))
-    print("DEBUG recipient =", repr(to_email))
+    print("DEBUG sender =", repr(sender), flush=True)
+    print("DEBUG recipient =", repr(to_email), flush=True)
 
     if not sender:
         raise ValueError("SES sender email not set.")
@@ -168,21 +168,23 @@ def send_email_alert(to_email, subject, body):
                 "Body": {"Text": {"Data": body}}
             }
         )
-        print("SES success:", response)
+        print("SES success:", response, flush=True)
         return response
 
     except ClientError as e:
-        print("SES ClientError:", e.response)
+        print("SES ClientError:", e.response, flush=True)
         error_message = e.response.get("Error", {}).get("Message", str(e))
         raise RuntimeError(f"AWS SES error: {error_message}")
 
     except BotoCoreError as e:
-        print("SES BotoCoreError:", str(e))
+        print("SES BotoCoreError:", str(e), flush=True)
         raise RuntimeError(f"AWS SES connection error: {str(e)}")
 
     except Exception as e:
-        print("SES unknown error:", str(e))
+        print("SES unknown error:", str(e), flush=True)
         raise
+
+
 # ===== ALERT MESSAGE =====
 def build_alert_message(alert_type):
     return (
@@ -255,53 +257,147 @@ def run_camera_analysis():
 
 # ===== ARDUINO =====
 def find_arduino_port():
+    """
+    Keeps COM5 as the main target since that's your USB Serial Device.
+    Skips bluetooth COM ports.
+    """
     ports = list_ports.comports()
+
     for p in ports:
-        if "usb" in p.device.lower():
+        device = (p.device or "").upper()
+        desc = (p.description or "").lower()
+
+        if "bluetooth" in desc:
+            continue
+
+        if device == "COM5":
+            return "COM5"
+
+        if "arduino" in desc or "usb" in desc or "ch340" in desc or "cp210" in desc:
             return p.device
+
+    return "COM5"
+
+'''
+def parse_arduino_line(line):
+    """
+    Expected format:
+    DIST:12,VIS:300,CAM:Idle
+    """
+    parts = {}
+
+    for item in line.split(","):
+        if ":" in item:
+            key, value = item.split(":", 1)
+            parts[key.strip().upper()] = value.strip()
+
+    if "DIST" not in parts:
+        return None
+
+    distance = float(parts.get("DIST", current_state["distance"]))
+    visibility = float(parts.get("VIS", current_state["visibility"]))
+    camera_status = parts.get("CAM", current_state["camera_status"])
+
+    return distance, visibility, camera_status
+'''
+
+def parse_arduino_line(line):
+    """
+    Supports:
+    1) DIST:12,VIS:300,CAM:Idle
+    2) distance: 64.57 cm
+    3) warning text like WATCH OUT FOR DOWNSTAIRS
+    """
+    cleaned = str(line).strip()
+    lowered = cleaned.lower()
+
+    # Structured format: DIST:12,VIS:300,CAM:Idle
+    if "dist:" in lowered:
+        parts = {}
+        for item in cleaned.split(","):
+            if ":" in item:
+                key, value = item.split(":", 1)
+                parts[key.strip().upper()] = value.strip()
+
+        if "DIST" in parts:
+            distance_match = re.search(r"[-+]?\d*\.?\d+", parts["DIST"])
+            if not distance_match:
+                return None
+
+            distance = float(distance_match.group())
+
+            vis_raw = parts.get("VIS", str(current_state["visibility"]))
+            vis_match = re.search(r"[-+]?\d*\.?\d+", vis_raw)
+            visibility = float(vis_match.group()) if vis_match else current_state["visibility"]
+
+            camera_status = parts.get("CAM", current_state["camera_status"])
+            return distance, visibility, camera_status
+
+    # Plain distance line like "distance: 112.22 cm"
+    if "distance" in lowered:
+        match = re.search(r"[-+]?\d*\.?\d+", cleaned)
+        if match:
+            distance = float(match.group())
+            visibility = current_state["visibility"]
+            camera_status = current_state["camera_status"]
+            return distance, visibility, camera_status
+
+    # Warning-only text
+    if "watch out" in lowered or "downstairs" in lowered:
+        current_state["camera_status"] = "Monitoring"
+        current_state["camera_hazard_result"] = cleaned
+        current_state["last_updated"] = now_string()
+        return None
+
     return None
 
 
 def read_arduino_loop():
     while True:
-        port = find_arduino_port()
-
-        if not port:
-            current_state["arduino_connected"] = False
-            time.sleep(2)
-            continue
+        port = "COM5"
+        ser = None
 
         try:
+            print(f"Trying Arduino on {port}...", flush=True)
             ser = serial.Serial(port, 9600, timeout=1)
+            print(f"Opened serial on {port}", flush=True)
+
             time.sleep(2)
             current_state["arduino_connected"] = True
+            current_state["arduino_port"] = port
+
+            print("Waiting for Arduino data...", flush=True)
 
             while True:
                 line = ser.readline().decode(errors="ignore").strip()
 
+                if line:
+                    print(f"RAW: {line}", flush=True)
+
                 if not line:
                     continue
 
-                if "DIST:" in line:
-                    try:
-                        parts = {}
-                        for item in line.split(","):
-                            if ":" in item:
-                                key, value = item.split(":", 1)
-                                parts[key.strip().upper()] = value.strip()
+                parsed = parse_arduino_line(line)
+                if parsed is None:
+                    continue
 
-                        dist = float(parts.get("DIST", current_state["distance"]))
-                        vis = float(parts.get("VIS", current_state["visibility"]))
-                        cam = parts.get("CAM", current_state["camera_status"])
-
-                        update_data(dist, vis, cam, source="arduino")
-                    except Exception as parse_error:
-                        print("Arduino parse error:", parse_error)
+                dist, vis, cam = parsed
+                update_data(dist, vis, cam, source="arduino")
+                print(f"Updated state from Arduino: DIST={dist}, VIS={vis}, CAM={cam}", flush=True)
 
         except Exception as e:
             current_state["arduino_connected"] = False
-            print("Arduino error:", e)
+            current_state["arduino_port"] = None
+            print(f"Arduino connection error: {e}", flush=True)
             time.sleep(2)
+
+        finally:
+            try:
+                if ser is not None:
+                    ser.close()
+                    print("Serial port closed", flush=True)
+            except Exception:
+                pass
 
 
 # ===== PAGE ROUTES =====
@@ -375,8 +471,6 @@ def save_contact():
     }
 
     save_trusted_contact_to_file(trusted_contact)
-
-    # reload from disk so UI always reflects what is actually stored
     trusted_contact = load_trusted_contact()
 
     return jsonify({
@@ -535,4 +629,4 @@ def send_alert():
 if __name__ == "__main__":
     ensure_contact_file_exists()
     threading.Thread(target=read_arduino_loop, daemon=True).start()
-    app.run(debug=True, host="127.0.0.1", port=8000)
+    app.run(debug=True, host="127.0.0.1", port=8000, use_reloader=False)
