@@ -8,7 +8,7 @@ from google.genai import types
 import cv2
 import base64
 
-SERIAL_PORT = '/dev/cu.debug-console' # what is this?
+SERIAL_PORT = 'COM5' # what is this?
 BAUD_RATE = 9600
 CAMERA_INDEX = 1
 
@@ -16,19 +16,24 @@ CAMERA_INDEX = 1
 load_dotenv()
 client = genai.Client(vertexai=True, project = os.getenv('GOOGLE_CLOUD_PROJECT'))
 
+
+cap = cv2.VideoCapture(1)  # index 1 for Logitech
+
+if not cap.isOpened():
+    print("Error: Camera could not be opened.")
+    exit()
+  
+# setting the camera resolution.
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+
 def detect():
     print("Starting image capture.")
-    cap = cv2.VideoCapture(1)  # index 1 for Logitech
-
-    # setting the camera resolution.
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-    #warmup?
+    
 
     # start read process. off camera after capture.
     ret, frame = cap.read() # .read returns (indicator, frame) --> ret stores success/failure.
-    cap.release()
 
     if not ret:
         print("Error: Failed to capture image")
@@ -63,12 +68,13 @@ def detect():
             Only output one of these responses. Do not add explanations or extra text.
                   '''
         response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-2.5-pro',
         contents=[
           types.Part.from_bytes(
             data=img_base64,
             mime_type='image/jpeg',
         ),
+        prompt
                 ]
       )
         print("-" * 30)
@@ -85,9 +91,8 @@ try:
     while True:
         # keep listening for capture - if found, run detect function.
         if serialVar.in_waiting > 0:
-            line = serialVar.readline()
-            print(line)
-            if line == 'capture':
+            line = serialVar.readline().decode('utf-8',errors = 'ignore').strip()
+            if line=='CAPTURE':
                 print("Capturing!!!")
                 detect()
 except serial.SerialException as se:
@@ -95,7 +100,8 @@ except serial.SerialException as se:
 except Exception as e:
     print(f"Error: {e}")
 finally:
-    print("Capturing finished!");
+    print("Capturing finished!")
+    cap.release()
     serialVar.close()
 
         
