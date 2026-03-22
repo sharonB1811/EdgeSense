@@ -79,7 +79,6 @@ def detect():
       )
         print("-" * 30)
         # results:
-        print("Results: ", '\n')
         print("Result: ", response.text)
     except Exception as e:
         print(f"Error: {e}")
