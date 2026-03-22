@@ -2,26 +2,23 @@
 
 {% block content %}
 
-<!-- ===== TOP INTRO (NEW) ===== -->
 <section class="section">
     <div class="container">
         <p class="section-eyebrow">EdgeSense</p>
         <h1>Accessibility-Focused Smart Navigation</h1>
         <p>
-            EdgeSense helps users safely navigate their environment by detecting drop-offs like stairs and curbs in real time.
-            Using light-independent sensing, it works reliably both day and night to improve mobility, prevent falls, and
-            increase confidence in everyday movement.
+            EdgeSense helps users safely navigate their environment by detecting hazards like obstacles,
+            curbs, and downstairs conditions in real time. Using sensor-based detection with optional
+            camera confirmation, it supports safer movement and greater confidence in everyday navigation.
         </p>
     </div>
 </section>
 
-<!-- ===== DASHBOARD ===== -->
 <section class="section">
     <div class="container">
 
         <div class="dashboard-grid">
 
-            <!-- ===== LEFT: MAIN STATUS ===== -->
             <div class="hero-panel">
 
                 <div class="panel-header">
@@ -38,7 +35,6 @@
                     <span id="statusLabel">SAFE</span>
                 </div>
 
-                <!-- SENSOR DATA -->
                 <div class="sensor-grid">
                     <div class="sensor-card">
                         <p>Ground Distance</p>
@@ -63,7 +59,6 @@
                     </div>
                 </div>
 
-                <!-- ENVIRONMENTAL INFO -->
                 <div class="manual-update">
                     <h4>Environmental Awareness</h4>
 
@@ -78,14 +73,32 @@
                     </p>
                 </div>
 
+                <div class="manual-update">
+                    <h4>Camera Confirmation</h4>
+
+                    <p>
+                        <strong>Camera Result:</strong>
+                        <span id="cameraHazardResult">No camera analysis yet.</span>
+                    </p>
+
+                    <p>
+                        <strong>Last Capture:</strong>
+                        <span id="cameraLastCapture">Not yet captured</span>
+                    </p>
+
+                    <button class="btn btn-secondary" onclick="analyzeCamera()">
+                        Analyze Camera View
+                    </button>
+                </div>
+
                 <div class="panel-note">
-                    EdgeSense provides real-time awareness of ground-level hazards such as stairs, curbs, and drop-offs.
-                    Because it uses distance sensing instead of vision, it remains reliable in both daylight and low-light environments.
+                    EdgeSense uses distance sensing as its primary hazard detector and optional camera analysis
+                    as a secondary confirmation layer. This helps identify what kind of hazard may be present
+                    ahead of the user.
                 </div>
 
             </div>
 
-            <!-- ===== RIGHT: CONTROLS ===== -->
             <div class="control-panel">
 
                 <h3>Simulation Controls</h3>
@@ -97,7 +110,7 @@
                     </button>
 
                     <button class="btn btn-warning" onclick="simulateMode('warning')">
-                        Caution
+                        Surface Up Front
                     </button>
 
                     <button class="btn btn-secondary" onclick="simulateMode('night')">
@@ -105,11 +118,10 @@
                     </button>
 
                     <button class="btn btn-danger" onclick="simulateMode('danger')">
-                        Drop-Off Detected
+                        Watch Out for Downstairs
                     </button>
                 </div>
 
-                <!-- MANUAL INPUT -->
                 <div class="manual-update">
                     <h4>Manual Sensor Input</h4>
 
@@ -127,10 +139,22 @@
                     </button>
                 </div>
 
+                <div class="manual-update">
+                    <h4>System Notes</h4>
+                    <p>
+                        <strong>Warning:</strong> surface or obstacle detected close in front.
+                    </p>
+                    <p>
+                        <strong>Danger:</strong> possible downstairs or drop-off detected.
+                    </p>
+                    <p>
+                        <strong>Safe:</strong> all is clear.
+                    </p>
+                </div>
+
             </div>
         </div>
 
-        <!-- ===== LOGS ===== -->
         <div class="logs-section">
             <h3>Hazard History</h3>
 
